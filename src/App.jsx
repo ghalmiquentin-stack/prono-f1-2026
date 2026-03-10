@@ -29,7 +29,7 @@ export default function App() {
     return (
       <>
         <ToastContainer toasts={toasts} removeToast={removeToast} />
-        <Onboarding onSelectPlayer={setPlayerId} />
+        <Onboarding onSelectPlayer={(id) => { setPlayerId(id); setActiveTab('accueil') }} />
       </>
     )
   }

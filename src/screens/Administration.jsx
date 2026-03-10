@@ -138,6 +138,13 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
     })
   }, [players, currentPlayerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset PIN fields when player changes
+  useEffect(() => {
+    setPinDraft('')
+    setPinConfirmDraft('')
+    setPinError('')
+  }, [currentPlayerId])
+
   // ── PIN handlers ─────────────────────────────────────────────────────────
   const savePinHandler = async () => {
     if (!/^\d{4}$/.test(pinDraft)) {
@@ -469,13 +476,18 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
                 )}
                 <div className="relative">
                   <input
-                    type={pinVisible ? 'text' : 'password'}
+                    type="text"
                     value={pinDraft}
                     onChange={e => { setPinDraft(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinError('') }}
                     className="input-field pr-12"
                     placeholder="Nouveau PIN (4 chiffres)"
                     inputMode="numeric"
                     maxLength={4}
+                    autoComplete="new-password"
+                    name="pin-field-no-autofill"
+                    readOnly
+                    onFocus={e => e.target.removeAttribute('readOnly')}
+                    style={{ WebkitTextSecurity: pinVisible ? 'none' : 'disc' }}
                   />
                   <button
                     type="button"
@@ -486,13 +498,18 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
                   </button>
                 </div>
                 <input
-                  type={pinVisible ? 'text' : 'password'}
+                  type="text"
                   value={pinConfirmDraft}
                   onChange={e => { setPinConfirmDraft(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinError('') }}
                   className="input-field"
                   placeholder="Confirmer le PIN"
                   inputMode="numeric"
                   maxLength={4}
+                  autoComplete="new-password"
+                  name="pin-confirm-no-autofill"
+                  readOnly
+                  onFocus={e => e.target.removeAttribute('readOnly')}
+                  style={{ WebkitTextSecurity: pinVisible ? 'none' : 'disc' }}
                 />
                 {pinError && <p className="text-accent text-xs font-bold">{pinError}</p>}
                 <div className="flex gap-2">
