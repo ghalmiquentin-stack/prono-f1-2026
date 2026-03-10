@@ -115,24 +115,51 @@ export default function Courses({ currentPlayerId, addToast }) {
     setSaving(true)
     try {
       const existing = getMyPrediction(selectedRace.id)
-      await upsertDoc('predictions', `${currentPlayerId}_${selectedRace.id}`, {
-        playerId: currentPlayerId,
-        raceId: selectedRace.id,
-        prediction: draftPrediction,
-        submittedAt: new Date(),
-        locked: false,
-      })
-      if (existing && (
-        existing.prediction?.P1 !== draftPrediction.P1 ||
-        existing.prediction?.P2 !== draftPrediction.P2 ||
-        existing.prediction?.P3 !== draftPrediction.P3
-      )) {
+
+      if (!existing) {
+        // First save — store initialPrediction for future modification tracking
+        await upsertDoc('predictions', `${currentPlayerId}_${selectedRace.id}`, {
+          playerId: currentPlayerId,
+          raceId: selectedRace.id,
+          prediction: draftPrediction,
+          initialPrediction: draftPrediction,
+          hasChanged: false,
+          submittedAt: new Date(),
+          locked: false,
+        })
+        addToast('Pronostic enregistré !', 'success')
+      } else if (existing.hasChanged) {
+        // Already used modification allowance — blocked (UI should prevent this)
+        addToast('Modification impossible : vous avez déjà modifié ce pronostic', 'error')
+        setSaving(false)
+        return
+      } else {
+        // Modification: validate exactly 1 new driver not in initialPrediction
+        const ipDrivers = Object.values(existing.initialPrediction ?? existing.prediction ?? {})
+        const dpDrivers = Object.values(draftPrediction)
+        const newDrivers = dpDrivers.filter(d => !ipDrivers.includes(d))
+
+        if (newDrivers.length !== 1) {
+          addToast(
+            newDrivers.length === 0
+              ? 'Vous devez remplacer au moins 1 pilote par un nouveau (pas dans votre prono initial)'
+              : 'Vous ne pouvez remplacer qu\'un seul pilote à la fois',
+            'error'
+          )
+          setSaving(false)
+          return
+        }
+
+        await upsertDoc('predictions', `${currentPlayerId}_${selectedRace.id}`, {
+          ...existing,
+          prediction: draftPrediction,
+          hasChanged: true,
+          modifiedAt: new Date(),
+        })
         await upsertDoc('penalties', `pen_change_${currentPlayerId}_${selectedRace.id}_${Date.now()}`, {
           playerId: currentPlayerId, raceId: selectedRace.id, type: 'change',
         })
         addToast('Pronostic modifié — pénalité -5 pts appliquée', 'warning')
-      } else {
-        addToast('Pronostic enregistré !', 'success')
       }
       closeSheet()
     } catch (err) {
@@ -408,74 +435,128 @@ export default function Courses({ currentPlayerId, addToast }) {
               </div>
             ) : (
               /* Upcoming: prediction form */
-              <div className="space-y-5">
-                <div>
-                  <p className="section-title">Votre pronostic podium</p>
-                  <div className="space-y-3">
-                    {POSITIONS.map((pos, i) => {
-                      const driver = draftPrediction[pos]
-                      const teamColor = driver ? getTeamColor(driver) : null
-                      return (
-                        <button
-                          key={pos}
-                          onClick={() => { setActivePosition(pos); setDriverPickerOpen(true) }}
-                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all active:scale-[0.98] ${
-                            driver ? '' : 'border-dashed border-border'
-                          }`}
-                          style={driver ? { borderColor: teamColor + '80', backgroundColor: teamColor + '15' } : {}}
-                        >
-                          <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>
-                            {i + 1}
-                          </div>
-                          {driver ? (
-                            <>
-                              <div className="flex-1 text-left">
-                                <p className="font-bold text-sm">{driver}</p>
-                                <p className="text-xs text-muted">{getDriverTeam(driver)?.name}</p>
+              (() => {
+                const existingPred = getMyPrediction(selectedRace.id)
+                const isLocked = existingPred?.hasChanged === true
+
+                if (isLocked) {
+                  return (
+                    <div className="space-y-5">
+                      <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                        <span className="text-lg">🔒</span>
+                        <div>
+                          <p className="text-xs font-black text-yellow-400">Modification unique utilisée</p>
+                          <p className="text-xs text-muted mt-0.5">Ce pronostic ne peut plus être modifié</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="section-title">Votre pronostic (final)</p>
+                        <div className="space-y-3">
+                          {POSITIONS.map((pos, i) => {
+                            const driver = existingPred.prediction[pos]
+                            const teamColor = driver ? getTeamColor(driver) : null
+                            return (
+                              <div
+                                key={pos}
+                                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 opacity-80"
+                                style={driver ? { borderColor: teamColor + '60', backgroundColor: teamColor + '10' } : {}}
+                              >
+                                <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>
+                                  {i + 1}
+                                </div>
+                                <div className="flex-1 text-left">
+                                  <p className="font-bold text-sm">{driver}</p>
+                                  <p className="text-xs text-muted">{getDriverTeam(driver)?.name}</p>
+                                </div>
+                                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: teamColor }} />
                               </div>
-                              <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: teamColor }} />
-                              <span
-                                className="text-muted text-sm"
-                                onClick={e => { e.stopPropagation(); clearPosition(pos) }}
-                              >✕</span>
-                            </>
-                          ) : (
-                            <span className="text-muted text-sm flex-1 text-left">
-                              {pos === 'P1' ? 'Choisir le vainqueur' : pos === 'P2' ? 'Choisir le 2e' : 'Choisir le 3e'}
-                            </span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
 
-                <div className="card-elevated rounded-xl p-4 space-y-1.5">
-                  <p className="section-title">Barème de points</p>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">Position exacte</span>
-                    <span className="text-green-400 font-bold">+10 pts</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">Sur le podium (mauvaise pos.)</span>
-                    <span className="text-yellow-400 font-bold">+3 pts</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">Podium parfait (bonus)</span>
-                    <span className="text-gold font-bold">+5 pts</span>
-                  </div>
-                </div>
+                return (
+                  <div className="space-y-5">
+                    <div>
+                      <p className="section-title">Votre pronostic podium</p>
+                      {existingPred && !existingPred.hasChanged && (
+                        <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                          <span className="text-sm">⚠️</span>
+                          <p className="text-xs text-yellow-400 font-bold">
+                            1 modification autorisée · Remplacez exactement 1 pilote par un nouveau (-5 pts)
+                          </p>
+                        </div>
+                      )}
+                      <div className="space-y-3">
+                        {POSITIONS.map((pos, i) => {
+                          const driver = draftPrediction[pos]
+                          const teamColor = driver ? getTeamColor(driver) : null
+                          return (
+                            <button
+                              key={pos}
+                              onClick={() => { setActivePosition(pos); setDriverPickerOpen(true) }}
+                              className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all active:scale-[0.98] ${
+                                driver ? '' : 'border-dashed border-border'
+                              }`}
+                              style={driver ? { borderColor: teamColor + '80', backgroundColor: teamColor + '15' } : {}}
+                            >
+                              <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>
+                                {i + 1}
+                              </div>
+                              {driver ? (
+                                <>
+                                  <div className="flex-1 text-left">
+                                    <p className="font-bold text-sm">{driver}</p>
+                                    <p className="text-xs text-muted">{getDriverTeam(driver)?.name}</p>
+                                  </div>
+                                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: teamColor }} />
+                                  <span
+                                    className="text-muted text-sm"
+                                    onClick={e => { e.stopPropagation(); clearPosition(pos) }}
+                                  >✕</span>
+                                </>
+                              ) : (
+                                <span className="text-muted text-sm flex-1 text-left">
+                                  {pos === 'P1' ? 'Choisir le vainqueur' : pos === 'P2' ? 'Choisir le 2e' : 'Choisir le 3e'}
+                                </span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
 
-                <button
-                  onClick={savePrediction}
-                  disabled={!canSave || saving}
-                  className={`w-full py-4 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
-                    canSave && !saving ? 'bg-accent text-white shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                  }`}
-                >
-                  {saving ? 'Enregistrement...' : canSave ? 'Valider mon pronostic' : 'Complétez le podium'}
-                </button>
-              </div>
+                    <div className="card-elevated rounded-xl p-4 space-y-1.5">
+                      <p className="section-title">Barème de points</p>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted">Position exacte</span>
+                        <span className="text-green-400 font-bold">+10 pts</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted">Sur le podium (mauvaise pos.)</span>
+                        <span className="text-yellow-400 font-bold">+3 pts</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted">Podium parfait (bonus)</span>
+                        <span className="text-gold font-bold">+5 pts</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={savePrediction}
+                      disabled={!canSave || saving}
+                      className={`w-full py-4 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
+                        canSave && !saving ? 'bg-accent text-white shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
+                      }`}
+                    >
+                      {saving ? 'Enregistrement...' : canSave ? 'Valider mon pronostic' : 'Complétez le podium'}
+                    </button>
+                  </div>
+                )
+              })()
             )}
           </div>
         )}

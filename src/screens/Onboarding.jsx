@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useCollection } from '../hooks/useFirestore'
 
 const PLAYERS_ORDER = ['william', 'quentin', 'alex', 'romain']
@@ -11,13 +11,44 @@ const FALLBACKS = {
   romain:  { displayName: 'Romain',  color: '#A855F7', avatar: '⚡', nickname: "L'Électrique" },
 }
 
+function getPinAttempts(pid) {
+  try { return JSON.parse(localStorage.getItem(`pin_attempts_${pid}`)) ?? { count: 0, blockedUntil: null } }
+  catch { return { count: 0, blockedUntil: null } }
+}
+
+function setPinAttempts(pid, data) {
+  localStorage.setItem(`pin_attempts_${pid}`, JSON.stringify(data))
+}
+
 export default function Onboarding({ onSelectPlayer }) {
   const { data: players, loading } = useCollection('players')
   const [selected, setSelected] = useState(null)
 
-  const handleConfirm = () => {
-    if (selected) onSelectPlayer(selected)
-  }
+  // PIN states
+  const [pinStep, setPinStep] = useState(null) // null | 'entry' | 'blocked'
+  const [pinInput, setPinInput] = useState('')
+  const [pinVisible, setPinVisible] = useState(false)
+  const [pinError, setPinError] = useState('')
+  const [blockSecondsLeft, setBlockSecondsLeft] = useState(0)
+
+  // Countdown timer when blocked
+  useEffect(() => {
+    if (pinStep !== 'blocked' || !selected) return
+    const att = getPinAttempts(selected)
+    if (!att.blockedUntil) return
+
+    const update = () => {
+      const left = Math.max(0, Math.ceil((att.blockedUntil - Date.now()) / 1000))
+      setBlockSecondsLeft(left)
+      if (left === 0) {
+        setPinAttempts(selected, { count: 0, blockedUntil: null })
+        setPinStep(null)
+      }
+    }
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
+  }, [pinStep, selected])
 
   // Build ordered player list, merging Firebase data with fallbacks
   const playerList = PLAYERS_ORDER.map(pid => {
@@ -29,10 +60,56 @@ export default function Onboarding({ onSelectPlayer }) {
       color:       String(fb?.color       ?? fb_.color),
       avatar:      String(fb?.avatar      ?? fb_.avatar),
       nickname:    String(fb?.nickname    ?? fb_.nickname),
+      pin:         fb?.pin ?? null,
     }
   })
 
   const selectedPlayer = playerList.find(p => p.id === selected)
+
+  const handleConfirm = () => {
+    if (!selected || loading) return
+    const player = playerList.find(p => p.id === selected)
+    if (player?.pin) {
+      const att = getPinAttempts(selected)
+      if (att.blockedUntil && Date.now() < att.blockedUntil) {
+        setPinStep('blocked')
+        return
+      }
+      setPinInput('')
+      setPinError('')
+      setPinStep('entry')
+    } else {
+      onSelectPlayer(selected)
+    }
+  }
+
+  const handlePinSubmit = () => {
+    if (!selected || !selectedPlayer || pinInput.length !== 4) return
+    const att = getPinAttempts(selected)
+
+    if (pinInput === String(selectedPlayer.pin)) {
+      setPinAttempts(selected, { count: 0, blockedUntil: null })
+      onSelectPlayer(selected)
+    } else {
+      const newCount = att.count + 1
+      if (newCount >= 3) {
+        const blockedUntil = Date.now() + 5 * 60 * 1000
+        setPinAttempts(selected, { count: newCount, blockedUntil })
+        setPinStep('blocked')
+        setPinInput('')
+      } else {
+        setPinAttempts(selected, { count: newCount, blockedUntil: null })
+        setPinError(`PIN incorrect — ${3 - newCount} tentative${3 - newCount > 1 ? 's' : ''} restante${3 - newCount > 1 ? 's' : ''}`)
+        setPinInput('')
+      }
+    }
+  }
+
+  const closePinModal = () => {
+    setPinStep(null)
+    setPinInput('')
+    setPinError('')
+  }
 
   return (
     <div className="min-h-[100dvh] bg-bg flex flex-col items-center justify-center px-5 py-10 safe-top">
@@ -94,6 +171,9 @@ export default function Onboarding({ onSelectPlayer }) {
                       ✓
                     </div>
                   )}
+                  {player.pin && (
+                    <div className="absolute top-2 left-2 text-xs text-muted">🔒</div>
+                  )}
                   <span className="text-4xl">{player.avatar}</span>
                   <span
                     className="text-lg font-black tracking-wide"
@@ -144,6 +224,97 @@ export default function Onboarding({ onSelectPlayer }) {
       <div className="mt-auto pt-8 text-center">
         <p className="text-xs text-muted/50">Prono F1 2026 · Fait avec ❤️ pour les fans</p>
       </div>
+
+      {/* ── PIN Modal ── */}
+      {pinStep && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-5 bg-black/80">
+          <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            {pinStep === 'blocked' ? (
+              /* Blocked state */
+              <>
+                <div className="text-center mb-5">
+                  <span className="text-5xl block mb-3">🔒</span>
+                  <h3 className="font-black text-lg">Trop de tentatives</h3>
+                  <p className="text-sm text-muted mt-1">Compte temporairement bloqué</p>
+                </div>
+                <div className="bg-surfaceHigh rounded-xl p-4 text-center mb-5">
+                  <p className="text-xs text-muted mb-1">Réessaie dans</p>
+                  <p className="text-2xl font-black text-white">
+                    {Math.floor(blockSecondsLeft / 60)}:{String(blockSecondsLeft % 60).padStart(2, '0')}
+                  </p>
+                </div>
+                <button
+                  onClick={closePinModal}
+                  className="w-full py-3 rounded-xl border border-border font-bold text-sm"
+                >
+                  Retour
+                </button>
+              </>
+            ) : (
+              /* PIN entry */
+              <>
+                <div className="flex items-center gap-3 mb-5">
+                  <span className="text-3xl">{selectedPlayer?.avatar}</span>
+                  <div>
+                    <h3 className="font-black text-base" style={{ color: selectedPlayer?.color }}>
+                      {selectedPlayer?.displayName}
+                    </h3>
+                    <p className="text-xs text-muted">Saisir votre code PIN</p>
+                  </div>
+                </div>
+
+                <div className="relative mb-1">
+                  <input
+                    type={pinVisible ? 'text' : 'password'}
+                    value={pinInput}
+                    onChange={e => {
+                      setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))
+                      setPinError('')
+                    }}
+                    onKeyDown={e => e.key === 'Enter' && pinInput.length === 4 && handlePinSubmit()}
+                    className="input-field pr-12 text-center text-2xl tracking-[0.5em] font-black"
+                    placeholder="••••"
+                    inputMode="numeric"
+                    autoFocus
+                    maxLength={4}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPinVisible(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted text-lg"
+                  >
+                    {pinVisible ? '🙈' : '👁️'}
+                  </button>
+                </div>
+
+                {pinError && (
+                  <p className="text-accent text-xs font-bold mb-2">{pinError}</p>
+                )}
+
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={closePinModal}
+                    className="flex-1 py-3 rounded-xl border border-border font-bold text-sm"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handlePinSubmit}
+                    disabled={pinInput.length !== 4}
+                    className="flex-1 py-3 rounded-xl font-black text-sm text-white transition-all active:scale-95"
+                    style={pinInput.length === 4 && selectedPlayer
+                      ? { backgroundColor: selectedPlayer.color }
+                      : { backgroundColor: '#2A2A3E', color: '#6B6B8A' }
+                    }
+                  >
+                    Valider
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

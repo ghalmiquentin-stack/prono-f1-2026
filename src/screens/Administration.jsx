@@ -100,9 +100,17 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
   const [adminPlayerDraft, setAdminPlayerDraft] = useState(null)
   const [adminPlayerSaving, setAdminPlayerSaving] = useState(false)
 
+  // ── PIN management (Mon Profil) ───────────────────────────────────────────
+  const [pinDraft, setPinDraft] = useState('')
+  const [pinConfirmDraft, setPinConfirmDraft] = useState('')
+  const [pinVisible, setPinVisible] = useState(false)
+  const [pinSaving, setPinSaving] = useState(false)
+  const [pinError, setPinError] = useState('')
+
   // ── Danger zone confirm modals ───────────────────────────────────────────
   const [confirmSeed, setConfirmSeed] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [confirmResetPin, setConfirmResetPin] = useState(false)
   const [seeding, setSeeding] = useState(false)
   const [clearing, setClearing] = useState(false)
 
@@ -129,6 +137,49 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
       avatar: player.avatar ?? '🏎️',
     })
   }, [players, currentPlayerId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── PIN handlers ─────────────────────────────────────────────────────────
+  const savePinHandler = async () => {
+    if (!/^\d{4}$/.test(pinDraft)) {
+      setPinError('Le PIN doit contenir exactement 4 chiffres')
+      return
+    }
+    if (pinDraft !== pinConfirmDraft) {
+      setPinError('Les codes PIN ne correspondent pas')
+      return
+    }
+    setPinSaving(true)
+    try {
+      await upsertDoc('players', currentPlayerId, { pin: pinDraft })
+      setPinDraft('')
+      setPinConfirmDraft('')
+      setPinError('')
+      addToast('PIN mis à jour !', 'success')
+    } catch {
+      addToast('Erreur lors de la sauvegarde', 'error')
+    } finally {
+      setPinSaving(false)
+    }
+  }
+
+  const deletePinHandler = async () => {
+    try {
+      await upsertDoc('players', currentPlayerId, { pin: null })
+      addToast('PIN supprimé', 'info')
+    } catch {
+      addToast('Erreur', 'error')
+    }
+  }
+
+  const resetAdminPlayerPin = async () => {
+    try {
+      await upsertDoc('players', adminSelectedPid, { pin: null })
+      addToast(`PIN de ${adminPlayerDraft?.displayName || adminSelectedPid} réinitialisé`, 'info')
+      setConfirmResetPin(false)
+    } catch {
+      addToast('Erreur', 'error')
+    }
+  }
 
   // ── Profile handlers ──────────────────────────────────────────────────────
   const saveProfile = async () => {
@@ -406,6 +457,66 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
               >
                 {profileSaving ? 'Sauvegarde...' : 'Sauvegarder le profil'}
               </button>
+
+              {/* ── Sécurité – Code PIN ── */}
+              <div className="pt-3 border-t border-border space-y-3">
+                <p className="text-xs text-muted font-bold uppercase tracking-wide">Sécurité — Code PIN</p>
+                {players.find(p => p.id === currentPlayerId)?.pin && (
+                  <div className="flex items-center gap-2 text-xs text-green-400 font-bold">
+                    <span>🔒</span>
+                    <span>PIN actif sur ce compte</span>
+                  </div>
+                )}
+                <div className="relative">
+                  <input
+                    type={pinVisible ? 'text' : 'password'}
+                    value={pinDraft}
+                    onChange={e => { setPinDraft(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinError('') }}
+                    className="input-field pr-12"
+                    placeholder="Nouveau PIN (4 chiffres)"
+                    inputMode="numeric"
+                    maxLength={4}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPinVisible(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted"
+                  >
+                    {pinVisible ? '🙈' : '👁️'}
+                  </button>
+                </div>
+                <input
+                  type={pinVisible ? 'text' : 'password'}
+                  value={pinConfirmDraft}
+                  onChange={e => { setPinConfirmDraft(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinError('') }}
+                  className="input-field"
+                  placeholder="Confirmer le PIN"
+                  inputMode="numeric"
+                  maxLength={4}
+                />
+                {pinError && <p className="text-accent text-xs font-bold">{pinError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={savePinHandler}
+                    disabled={pinSaving || pinDraft.length !== 4 || pinConfirmDraft.length !== 4}
+                    className={`flex-1 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 ${
+                      !pinSaving && pinDraft.length === 4 && pinConfirmDraft.length === 4
+                        ? 'bg-accent text-white'
+                        : 'bg-surfaceHigh text-muted cursor-not-allowed'
+                    }`}
+                  >
+                    {pinSaving ? 'Sauvegarde…' : 'Sauvegarder le PIN'}
+                  </button>
+                  {players.find(p => p.id === currentPlayerId)?.pin && (
+                    <button
+                      onClick={deletePinHandler}
+                      className="px-3 py-2.5 rounded-xl border border-border text-xs font-bold text-muted hover:text-white transition-colors"
+                    >
+                      Supprimer
+                    </button>
+                  )}
+                </div>
+              </div>
             </>
           ) : (
             <p className="text-sm text-muted text-center py-4">Chargement du profil…</p>
@@ -596,6 +707,15 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
                   >
                     {adminPlayerSaving ? 'Sauvegarde…' : 'Sauvegarder'}
                   </button>
+
+                  {players.find(p => p.id === adminSelectedPid)?.pin && (
+                    <button
+                      onClick={() => setConfirmResetPin(true)}
+                      className="w-full py-2.5 rounded-xl border border-border text-xs font-bold text-muted"
+                    >
+                      🔒 Réinitialiser le PIN
+                    </button>
+                  )}
                 </>
               ) : (
                 <p className="text-sm text-muted text-center py-2">Chargement…</p>
@@ -994,6 +1114,16 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
           </button>
         </div>
       </BottomSheet>
+
+      <ConfirmModal
+        isOpen={confirmResetPin}
+        title={`Réinitialiser le PIN de ${adminPlayerDraft?.displayName || adminSelectedPid} ?`}
+        message="Le joueur pourra se connecter sans PIN jusqu'à ce qu'il en définisse un nouveau."
+        confirmLabel="Réinitialiser"
+        danger={false}
+        onConfirm={resetAdminPlayerPin}
+        onCancel={() => setConfirmResetPin(false)}
+      />
     </div>
   )
 }
