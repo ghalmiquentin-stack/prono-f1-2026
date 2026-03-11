@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useCollection, upsertDoc, deleteDocument } from '../hooks/useFirestore'
+import { useCollection, useDocument, upsertDoc, deleteDocument } from '../hooks/useFirestore'
 import { seedDatabase, clearDatabase } from '../data/seed'
 import { TEAMS } from '../data/drivers'
 import BottomSheet from '../components/BottomSheet'
@@ -114,11 +114,21 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
   const [seeding, setSeeding] = useState(false)
   const [clearing, setClearing] = useState(false)
 
+  // ── OpenF1 sync ───────────────────────────────────────────────────────────
+  const [openf1Syncing, setOpenf1Syncing] = useState(false)
+  const [openf1SyncMsg, setOpenf1SyncMsg] = useState(null)
+
+  // ── OpenF1 result fetch ───────────────────────────────────────────────────
+  const [openf1ResultFetching, setOpenf1ResultFetching] = useState(false)
+  const [openf1ResultMsg, setOpenf1ResultMsg] = useState(null)
+
   // ── Firestore ────────────────────────────────────────────────────────────
   const { data: races } = useCollection('races')
   const { data: predictions } = useCollection('predictions')
   const { data: penalties } = useCollection('penalties')
   const { data: players } = useCollection('players')
+  const { data: drivers } = useCollection('drivers')
+  const { data: openf1Config } = useDocument('config', 'openf1')
 
   const sortedRaces = useMemo(() =>
     [...races].sort((a, b) => a.id - b.id),
@@ -250,6 +260,7 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
     setSelectedRace(null)
     setResultPosition(null)
     setDriverPickerOpen(false)
+    setOpenf1ResultMsg(null)
   }
 
   const selectDriver = (driver) => {
@@ -345,6 +356,117 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
       addToast(`Pronostic ${pred.locked ? 'déverrouillé' : 'verrouillé'}`, 'info')
     } catch {
       addToast('Erreur', 'error')
+    }
+  }
+
+  // ── OpenF1 helpers ────────────────────────────────────────────────────────
+  const OPENF1_SESSION_KEY = 11234
+
+  const RACE_COUNTRY_MAP = {
+    'Australie': 'Australia', 'Chine': 'China', 'Japon': 'Japan',
+    'Bahreïn': 'Bahrain', 'Arabie Saoudite': 'Saudi Arabia',
+    'Miami': 'United States', 'Émilie-Romagne': 'Italy', 'Monaco': 'Monaco',
+    'Canada': 'Canada', 'Espagne': 'Spain', 'Autriche': 'Austria',
+    'Grande-Bretagne': 'Great Britain', 'Belgique': 'Belgium',
+    'Hongrie': 'Hungary', 'Pays-Bas': 'Netherlands', 'Italie': 'Italy',
+    'Azerbaïdjan': 'Azerbaijan', 'Singapour': 'Singapore',
+    'États-Unis': 'United States', 'Mexique': 'Mexico', 'Brésil': 'Brazil',
+    'Las Vegas': 'United States', 'Qatar': 'Qatar', 'Abu Dhabi': 'Abu Dhabi',
+  }
+
+  const toTitle = s => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : null
+  const toTitleAll = s => s ? s.split(' ').map(toTitle).join(' ') : null
+
+  const syncDriversFromOpenF1 = async () => {
+    setOpenf1Syncing(true)
+    setOpenf1SyncMsg(null)
+    try {
+      const res = await fetch(
+        `https://api.openf1.org/v1/drivers?session_key=${OPENF1_SESSION_KEY}`
+      )
+      if (!res.ok) throw new Error(`OpenF1 API error: ${res.status}`)
+      const rawDrivers = await res.json()
+      if (!rawDrivers.length) throw new Error('Aucun pilote retourné')
+
+      for (const d of rawDrivers) {
+        await upsertDoc('drivers', String(d.driver_number), {
+          driver_number: d.driver_number,
+          full_name:     toTitleAll(d.full_name),
+          first_name:    toTitle(d.first_name),
+          last_name:     toTitle(d.last_name),
+          display_name:  toTitle(d.last_name),
+          name_acronym:  d.name_acronym   ?? null,
+          team_name:     d.team_name      ?? null,
+          team_colour:   d.team_colour    ? `#${d.team_colour}` : null,
+          headshot_url:  d.headshot_url   ?? null,
+          session_key:   OPENF1_SESSION_KEY,
+        })
+      }
+      await upsertDoc('config', 'openf1', {
+        lastSync:    new Date().toISOString(),
+        sessionKey:  OPENF1_SESSION_KEY,
+        driverCount: rawDrivers.length,
+      })
+      setOpenf1SyncMsg({ type: 'success', text: `${rawDrivers.length} pilotes synchronisés` })
+    } catch (err) {
+      setOpenf1SyncMsg({ type: 'error', text: err.message })
+    } finally {
+      setOpenf1Syncing(false)
+    }
+  }
+
+  const fetchResultFromOpenF1 = async () => {
+    if (!selectedRace) return
+    setOpenf1ResultFetching(true)
+    setOpenf1ResultMsg(null)
+    try {
+      // Step 1: resolve meeting_key
+      let meetingKey = selectedRace.meeting_key ?? null
+      if (!meetingKey) {
+        const countryName = RACE_COUNTRY_MAP[selectedRace.name]
+        if (!countryName) throw new Error(`Pays non mappé : "${selectedRace.name}"`)
+        const mRes = await fetch(
+          `https://api.openf1.org/v1/meetings?year=2026&country_name=${encodeURIComponent(countryName)}`
+        )
+        const meetings = await mRes.json()
+        if (!meetings.length) throw new Error(`Aucune réunion OpenF1 pour ${selectedRace.name}`)
+        meetingKey = meetings[0].meeting_key
+      }
+
+      // Step 2: get Race session_key
+      const sRes = await fetch(
+        `https://api.openf1.org/v1/sessions?meeting_key=${meetingKey}&session_name=Race`
+      )
+      const sessions = await sRes.json()
+      if (!sessions.length) throw new Error('Session "Race" introuvable')
+      const sessionKey = sessions[0].session_key
+
+      // Step 3: fetch all session results and keep top 3
+      const rRes = await fetch(
+        `https://api.openf1.org/v1/session_result?session_key=${sessionKey}`
+      )
+      const allResults = await rRes.json()
+      const top3 = allResults
+        .filter(r => r.position >= 1 && r.position <= 3)
+        .sort((a, b) => a.position - b.position)
+      if (top3.length < 3) throw new Error(`Seulement ${top3.length}/3 résultat(s) disponible(s)`)
+
+      // Step 4: resolve driver_number → display_name
+      const resolve = (num) => {
+        const d = drivers.find(dr => dr.driver_number === num || String(dr._id) === String(num))
+        return d?.display_name ?? d?.name_acronym ?? String(num)
+      }
+
+      setResultDraft({
+        P1: resolve(top3.find(r => r.position === 1)?.driver_number),
+        P2: resolve(top3.find(r => r.position === 2)?.driver_number),
+        P3: resolve(top3.find(r => r.position === 3)?.driver_number),
+      })
+      setOpenf1ResultMsg({ type: 'success', text: 'Résultat récupéré — vérifiez avant de valider' })
+    } catch (err) {
+      setOpenf1ResultMsg({ type: 'error', text: err.message })
+    } finally {
+      setOpenf1ResultFetching(false)
     }
   }
 
@@ -901,9 +1023,44 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
               </div>
             )}
 
+            {/* ── SYNCHRONISATION OPENF1 ── */}
+            <div className="mt-6 rounded-2xl border border-border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-black uppercase tracking-widest text-accent">⚡ Synchronisation OpenF1</p>
+                {openf1Config?.lastSync && (
+                  <p className="text-[10px] text-muted">
+                    Sync : {new Date(openf1Config.lastSync).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
+              </div>
+              {openf1Config?.driverCount != null && (
+                <p className="text-xs text-muted">{openf1Config.driverCount} pilotes en base</p>
+              )}
+              <button
+                onClick={syncDriversFromOpenF1}
+                disabled={openf1Syncing}
+                className="w-full flex items-center gap-3 p-3 rounded-xl border border-accent/30 bg-accent/10 active:opacity-70 text-left"
+              >
+                <span className="text-xl">{openf1Syncing ? '⏳' : '🔄'}</span>
+                <div>
+                  <p className="font-bold text-sm">{openf1Syncing ? 'Synchronisation…' : 'Sync pilotes depuis OpenF1'}</p>
+                  <p className="text-xs text-muted">session_key={OPENF1_SESSION_KEY} · Grille 2026</p>
+                </div>
+              </button>
+              {openf1SyncMsg && (
+                <p className={`text-xs font-bold px-3 py-2 rounded-lg ${
+                  openf1SyncMsg.type === 'success'
+                    ? 'bg-green-500/10 text-green-400'
+                    : 'bg-red-500/10 text-red-400'
+                }`}>
+                  {openf1SyncMsg.type === 'success' ? '✓ ' : '✕ '}{openf1SyncMsg.text}
+                </p>
+              )}
+            </div>
+
             {/* ── ZONE DANGEREUSE ── */}
             <div
-              className="mt-8 rounded-2xl border p-4 space-y-3"
+              className="mt-4 rounded-2xl border p-4 space-y-3"
               style={{ backgroundColor: 'rgba(127,0,0,0.12)', borderColor: 'rgba(200,0,0,0.25)' }}
             >
               <p className="text-xs font-black uppercase tracking-widest text-red-400">⚠️ Zone Dangereuse</p>
@@ -964,6 +1121,29 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
         {selectedRace && (
           <div className="p-5 pb-10 space-y-5">
             <p className="section-title">Podium officiel</p>
+
+            {/* ── OpenF1 fetch button ── */}
+            <button
+              onClick={fetchResultFromOpenF1}
+              disabled={openf1ResultFetching}
+              className="w-full flex items-center gap-3 p-3 rounded-xl border border-accent/30 bg-accent/10 active:opacity-70 text-left"
+            >
+              <span className="text-xl">{openf1ResultFetching ? '⏳' : '⚡'}</span>
+              <div>
+                <p className="font-bold text-sm">{openf1ResultFetching ? 'Récupération…' : 'Récupérer depuis OpenF1'}</p>
+                <p className="text-xs text-muted">Pré-remplit P1/P2/P3 automatiquement</p>
+              </div>
+            </button>
+            {openf1ResultMsg && (
+              <p className={`text-xs font-bold px-3 py-2 rounded-lg -mt-2 ${
+                openf1ResultMsg.type === 'success'
+                  ? 'bg-green-500/10 text-green-400'
+                  : 'bg-red-500/10 text-red-400'
+              }`}>
+                {openf1ResultMsg.type === 'success' ? '✓ ' : '✕ '}{openf1ResultMsg.text}
+              </p>
+            )}
+
             <div className="space-y-3">
               {['P1', 'P2', 'P3'].map((pos, i) => {
                 const driver = resultDraft[pos]

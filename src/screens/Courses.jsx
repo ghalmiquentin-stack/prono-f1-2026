@@ -6,6 +6,22 @@ import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
 import Skeleton from '../components/Skeleton'
 import Countdown from '../components/Countdown'
 
+function getDriverPhoto(drivers, displayName) {
+  if (!displayName || !drivers?.length) return null
+  return drivers.find(d => d.last_name?.toLowerCase() === displayName.toLowerCase())?.headshot_url ?? null
+}
+
+// Group Firebase drivers by team, sorted by team name
+function groupDriversByTeam(drivers) {
+  const map = {}
+  for (const d of drivers) {
+    const team = d.team_name ?? 'Unknown'
+    if (!map[team]) map[team] = { name: team, colour: d.team_colour ?? '#6B6B8A', drivers: [] }
+    map[team].drivers.push(d)
+  }
+  return Object.values(map).sort((a, b) => a.name.localeCompare(b.name))
+}
+
 const PLAYER_COLORS = {
   william: '#3B82F6',
   quentin: '#22C55E',
@@ -41,6 +57,7 @@ export default function Courses({ currentPlayerId, addToast }) {
   const { data: predictions, loading: predsLoading } = useCollection('predictions')
   const { data: penalties } = useCollection('penalties')
   const { data: players } = useCollection('players')
+  const { data: firestoreDrivers } = useCollection('drivers')
 
   const [selectedRace, setSelectedRace] = useState(null)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -354,21 +371,31 @@ export default function Courses({ currentPlayerId, addToast }) {
                 <div>
                   <p className="section-title">Résultat officiel</p>
                   <div className="space-y-2">
-                    {POSITIONS.map((pos, i) => (
-                      <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
-                        <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>
-                          {i + 1}
+                    {POSITIONS.map((pos, i) => {
+                      const driverName = selectedRace.result[pos]
+                      const photoUrl   = getDriverPhoto(firestoreDrivers, driverName)
+                      return (
+                        <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
+                          <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>
+                            {i + 1}
+                          </div>
+                          <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                            {photoUrl
+                              ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                              : <span>{driverName?.[0] ?? '?'}</span>
+                            }
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-bold leading-tight">{driverName}</p>
+                            <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
+                          </div>
+                          <div
+                            className="w-2 h-2 rounded-full"
+                            style={{ backgroundColor: getTeamColor(driverName) }}
+                          />
                         </div>
-                        <div className="flex-1">
-                          <p className="font-bold leading-tight">{selectedRace.result[pos]}</p>
-                          <p className="text-[10px] text-muted">{getDriverTeam(selectedRace.result[pos])?.name}</p>
-                        </div>
-                        <div
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: getTeamColor(selectedRace.result[pos]) }}
-                        />
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
 
@@ -570,6 +597,7 @@ export default function Courses({ currentPlayerId, addToast }) {
         fullHeight
       >
         <div className="p-4 pb-10">
+          {/* Already-picked reminder */}
           {POSITIONS.filter(p => p !== activePosition && draftPrediction[p]).map(pos => (
             <div key={pos} className="mb-2 flex items-center gap-2 text-xs text-muted">
               <span className={POS_COLOR[pos]}>{pos}:</span>
@@ -577,37 +605,93 @@ export default function Courses({ currentPlayerId, addToast }) {
               <span>(déjà sélectionné)</span>
             </div>
           ))}
-          {[...TEAMS].map(team => (
-            <div key={team.name} className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: team.color }} />
-                <span className="text-xs font-bold text-muted uppercase tracking-wide">{team.name}</span>
+
+          {firestoreDrivers.length > 0 ? (
+            /* ── Compact list from Firebase ── */
+            groupDriversByTeam(firestoreDrivers).map(team => (
+              <div key={team.name} className="mb-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: team.colour }} />
+                  <span className="text-xs font-bold text-muted uppercase tracking-wide">{team.name}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-2">
+                  {team.drivers.map(driver => {
+                    const driverName = driver.display_name ?? driver.name_acronym ?? String(driver._id)
+                    const isCurrent  = draftPrediction[activePosition] === driverName
+                    const isSelected = !isCurrent && Object.values(draftPrediction).includes(driverName)
+                    const initials   = (driver.first_name?.[0] ?? '') + (driver.last_name?.[0] ?? '')
+                    return (
+                      <button
+                        key={driver._id}
+                        onClick={() => !isSelected && selectDriver(driverName)}
+                        style={isCurrent ? { borderLeftColor: team.colour, backgroundColor: team.colour + '1a' } : {}}
+                        className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg mb-1 transition-all active:scale-95 border-l-[3px] ${
+                          isCurrent  ? 'border-l-[3px]' :
+                          isSelected ? 'opacity-35 cursor-default border-l-transparent' :
+                          'border-l-transparent'
+                        }`}
+                      >
+                        {/* Avatar */}
+                        <div
+                          className="w-10 h-10 rounded-full overflow-hidden shrink-0 flex items-center justify-center text-xs font-bold text-white"
+                          style={{ backgroundColor: team.colour + '66' }}
+                        >
+                          {driver.headshot_url ? (
+                            <img
+                              src={driver.headshot_url}
+                              alt=""
+                              className="w-full h-full object-cover object-top"
+                            />
+                          ) : (
+                            <span>{initials || driver.name_acronym}</span>
+                          )}
+                        </div>
+                        {/* Name */}
+                        <span className="text-sm text-white font-medium truncate flex-1 text-left">
+                          {driver.last_name ?? driverName}
+                        </span>
+                        {/* Team dot */}
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: team.colour }} />
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {team.drivers.map(driver => {
-                  const isSelected = Object.values(draftPrediction).includes(driver)
-                  const isCurrent = draftPrediction[activePosition] === driver
-                  return (
-                    <button
-                      key={driver}
-                      onClick={() => selectDriver(driver)}
-                      className={`p-3 rounded-xl border text-left transition-all active:scale-95 ${
-                        isCurrent  ? 'border-accent bg-accent/20' :
-                        isSelected ? 'border-muted/30 bg-surfaceHigh/30 opacity-50' :
-                        'border-border bg-surfaceHigh'
-                      }`}
-                    >
-                      <p className="font-bold text-sm">{driver}</p>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: team.color }} />
-                        <p className="text-xs text-muted">{team.name}</p>
-                      </div>
-                    </button>
-                  )
-                })}
+            ))
+          ) : (
+            /* ── Fallback: hardcoded TEAMS list ── */
+            [...TEAMS].map(team => (
+              <div key={team.name} className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: team.color }} />
+                  <span className="text-xs font-bold text-muted uppercase tracking-wide">{team.name}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {team.drivers.map(driver => {
+                    const isSelected = Object.values(draftPrediction).includes(driver)
+                    const isCurrent  = draftPrediction[activePosition] === driver
+                    return (
+                      <button
+                        key={driver}
+                        onClick={() => selectDriver(driver)}
+                        className={`p-3 rounded-xl border text-left transition-all active:scale-95 ${
+                          isCurrent  ? 'border-accent bg-accent/20' :
+                          isSelected ? 'border-muted/30 bg-surfaceHigh/30 opacity-50' :
+                          'border-border bg-surfaceHigh'
+                        }`}
+                      >
+                        <p className="font-bold text-sm">{driver}</p>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: team.color }} />
+                          <p className="text-xs text-muted">{team.name}</p>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </BottomSheet>
     </div>

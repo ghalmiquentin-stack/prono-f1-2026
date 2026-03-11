@@ -59,11 +59,17 @@ function getTzAbbr(isoString, tz) {
   return parts.find(p => p.type === 'timeZoneName')?.value ?? ''
 }
 
+function getDriverPhoto(drivers, displayName) {
+  if (!displayName || !drivers?.length) return null
+  return drivers.find(d => d.last_name?.toLowerCase() === displayName.toLowerCase())?.headshot_url ?? null
+}
+
 export default function Accueil({ currentPlayerId, setActiveTab }) {
   const { data: players, loading: playersLoading } = useCollection('players')
   const { data: races, loading: racesLoading } = useCollection('races')
   const { data: predictions } = useCollection('predictions')
   const { data: penalties } = useCollection('penalties')
+  const { data: drivers } = useCollection('drivers')
 
   const loading = playersLoading || racesLoading
 
@@ -336,21 +342,31 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
               <div>
                 <p className="section-title">Résultat officiel</p>
                 <div className="space-y-2">
-                  {POSITIONS.map((pos, i) => (
-                    <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
-                      <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>
-                        {i + 1}
+                  {POSITIONS.map((pos, i) => {
+                    const driverName = lastRace.result[pos]
+                    const photoUrl   = getDriverPhoto(drivers, driverName)
+                    return (
+                      <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
+                        <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>
+                          {i + 1}
+                        </div>
+                        <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                          {photoUrl
+                            ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                            : <span>{driverName?.[0] ?? '?'}</span>
+                          }
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-bold leading-tight">{driverName}</p>
+                          <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
+                        </div>
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: getTeamColor(driverName) }}
+                        />
                       </div>
-                      <div className="flex-1">
-                        <p className="font-bold leading-tight">{lastRace.result[pos]}</p>
-                        <p className="text-[10px] text-muted">{getDriverTeam(lastRace.result[pos])?.name}</p>
-                      </div>
-                      <div
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: getTeamColor(lastRace.result[pos]) }}
-                      />
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
 
