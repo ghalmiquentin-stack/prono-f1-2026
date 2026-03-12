@@ -282,6 +282,7 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
         ...selectedRace,
         result: resultDraft,
         status: 'completed',
+        qualifying_locked: true,
       })
       addToast(`Résultat GP ${selectedRace.name} enregistré !`, 'success')
       closeResultSheet()

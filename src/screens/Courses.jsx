@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { useCollection, upsertDoc } from '../hooks/useFirestore'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useCollection, useDocument, upsertDoc } from '../hooks/useFirestore'
 import { calculateRaceScore } from '../utils/scoring'
 import BottomSheet from '../components/BottomSheet'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
@@ -66,6 +66,22 @@ export default function Courses({ currentPlayerId, addToast }) {
   const [driverPickerOpen, setDriverPickerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState('all')
+  const [activeTab, setActiveTab] = useState('pronostics')
+  const [qualLoading, setQualLoading] = useState(false)
+  const [qualError, setQualError]   = useState(null)
+  const [qualRefreshing, setQualRefreshing] = useState(false)
+
+  // Reactive view of the selected race (stays fresh after Firebase writes)
+  const currentRace = useMemo(
+    () => selectedRace ? (races.find(r => r.id === selectedRace.id) ?? selectedRace) : null,
+    [races, selectedRace]
+  )
+
+  // History document for the selected race
+  const { data: raceHistory } = useDocument(
+    'races_history',
+    selectedRace ? String(selectedRace.id) : ''
+  )
 
   const loading = racesLoading || predsLoading
 
@@ -100,8 +116,57 @@ export default function Courses({ currentPlayerId, addToast }) {
     setSelectedRace(race)
     const existing = getMyPrediction(race.id)
     setDraftPrediction(existing?.prediction ?? { P1: null, P2: null, P3: null })
+    setActiveTab(race.status === 'completed' ? 'result' : 'pronostics')
+    setQualError(null)
     setSheetOpen(true)
   }
+
+  const toTitle = s => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : null
+
+  const fetchQualifying = useCallback(async (race, isRefresh = false) => {
+    const meetingKey = race.meeting_key_2026
+    if (!meetingKey) return
+    isRefresh ? setQualRefreshing(true) : setQualLoading(true)
+    setQualError(null)
+    try {
+      const sessRes = await fetch(
+        `https://api.openf1.org/v1/sessions?meeting_key=${meetingKey}&session_name=Qualifying`
+      )
+      const sessions = await sessRes.json()
+      const qualSession = sessions?.[0]
+      if (!qualSession) throw new Error('Session qualifications introuvable')
+
+      const gridRes = await fetch(
+        `https://api.openf1.org/v1/starting_grid?session_key=${qualSession.session_key}&position<=3`
+      )
+      const grid = await gridRes.json()
+      grid.sort((a, b) => a.position - b.position)
+
+      const resolve = num =>
+        firestoreDrivers.find(d => d.driver_number === num)?.display_name ?? toTitle(String(num))
+
+      const qualifying = {
+        P1: resolve(grid.find(g => g.position === 1)?.driver_number),
+        P2: resolve(grid.find(g => g.position === 2)?.driver_number),
+        P3: resolve(grid.find(g => g.position === 3)?.driver_number),
+        fetchedAt: new Date().toISOString(),
+      }
+      await upsertDoc('races', String(race.id), { qualifying_2026: qualifying })
+    } catch (err) {
+      setQualError(err.message)
+    } finally {
+      setQualLoading(false)
+      setQualRefreshing(false)
+    }
+  }, [firestoreDrivers])
+
+  // Auto-fetch qualifying when opening Résultat tab (case 3)
+  useEffect(() => {
+    if (activeTab !== 'result' || !currentRace) return
+    if (!currentRace.qualifying_locked && !currentRace.qualifying_2026 && currentRace.meeting_key_2026) {
+      fetchQualifying(currentRace)
+    }
+  }, [activeTab, currentRace?.id])
 
   const closeSheet = () => {
     setSheetOpen(false)
@@ -338,173 +403,152 @@ export default function Courses({ currentPlayerId, addToast }) {
         title={selectedRace ? `GP ${selectedRace.name} ${selectedRace.flag}` : ''}
         fullHeight
       >
-        {selectedRace && (
-          <div className="p-5 pb-10">
+        {selectedRace && currentRace && (
+          <div className="flex flex-col h-full">
             {/* Race info */}
-            <div className="flex items-start gap-3 mb-5 pb-4 border-b border-border">
-              <div className="flex-1">
-                <p className="text-xs text-muted">{selectedRace.city} · {selectedRace.circuit}</p>
-                <p className="text-sm font-bold">
-                  {new Date(selectedRace.date + 'T00:00:00').toLocaleDateString('fr-FR', {
-                    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-                  })}
-                </p>
-                {selectedRace.raceTime && (
-                  <p className="text-xs text-accent font-bold mt-0.5">
-                    {selectedRace.raceTime}
+            <div className="px-5 pt-4 pb-3 border-b border-border shrink-0">
+              <div className="flex items-start gap-3">
+                <div className="flex-1">
+                  <p className="text-xs text-muted">{currentRace.city} · {currentRace.circuit}</p>
+                  <p className="text-sm font-bold">
+                    {new Date(currentRace.date + 'T00:00:00').toLocaleDateString('fr-FR', {
+                      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+                    })}
                   </p>
-                )}
-              </div>
-              {selectedRace.status === 'upcoming' && (
-                <div>
+                  {currentRace.raceTime && (
+                    <p className="text-xs text-accent font-bold mt-0.5">{currentRace.raceTime}</p>
+                  )}
+                </div>
+                {currentRace.status === 'upcoming' && (
                   <Countdown
-                    targetDate={`${selectedRace.date}T${selectedRace.raceTimeUTC ?? '12:00'}:00Z`}
+                    targetDate={`${currentRace.date}T${currentRace.raceTimeUTC ?? '12:00'}:00Z`}
                     compact
                   />
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
-            {/* Completed race */}
-            {selectedRace.status === 'completed' && selectedRace.result ? (
-              <div className="space-y-5">
-                <div>
-                  <p className="section-title">Résultat officiel</p>
-                  <div className="space-y-2">
-                    {POSITIONS.map((pos, i) => {
-                      const driverName = selectedRace.result[pos]
-                      const photoUrl   = getDriverPhoto(firestoreDrivers, driverName)
-                      return (
-                        <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
-                          <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>
-                            {i + 1}
-                          </div>
-                          <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                            {photoUrl
-                              ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                              : <span>{driverName?.[0] ?? '?'}</span>
-                            }
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-bold leading-tight">{driverName}</p>
-                            <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
-                          </div>
-                          <div
-                            className="w-2 h-2 rounded-full"
-                            style={{ backgroundColor: getTeamColor(driverName) }}
-                          />
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
+            {/* Tab bar */}
+            <div className="flex gap-0 border-b border-border shrink-0">
+              {[
+                { id: 'pronostics', label: 'Pronostics' },
+                { id: 'result',    label: 'Résultat'   },
+                { id: 'history',   label: 'Historique' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 py-2.5 text-xs font-bold transition-all border-b-2 ${
+                    activeTab === tab.id
+                      ? 'border-accent text-white'
+                      : 'border-transparent text-muted'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-                <div>
+            {/* Tab content */}
+            <div className="flex-1 overflow-y-auto p-5 pb-10 space-y-5">
+
+              {/* ── ONGLET PRONOSTICS ── */}
+              {activeTab === 'pronostics' && currentRace.status === 'completed' && currentRace.result && (
+                <div className="space-y-3">
                   <p className="section-title">Pronostics des joueurs</p>
-                  <div className="space-y-3">
-                    {(['william', 'quentin', 'alex', 'romain']).map(pid => {
-                      const playerData = players.find(p => p.id === pid)
-                      const pidColor = String(playerData?.color ?? PLAYER_COLORS[pid] ?? '#fff')
-                      const pidAvatar = String(playerData?.avatar ?? PLAYER_AVATARS[pid] ?? '🏎️')
-                      const pidName = String(playerData?.displayName ?? pid)
-                      const pred = predictions.find(p => p.playerId === pid && p.raceId === selectedRace.id)
-                      const pens = penalties.filter(p => p.playerId === pid && p.raceId === selectedRace.id)
-                      if (!pred) return (
-                        <div key={pid} className="card p-3 flex items-center gap-3 opacity-50">
+                  {(['william', 'quentin', 'alex', 'romain']).map(pid => {
+                    const playerData = players.find(p => p.id === pid)
+                    const pidColor  = String(playerData?.color  ?? PLAYER_COLORS[pid]  ?? '#fff')
+                    const pidAvatar = String(playerData?.avatar ?? PLAYER_AVATARS[pid] ?? '🏎️')
+                    const pidName   = String(playerData?.displayName ?? pid)
+                    const pred = predictions.find(p => p.playerId === pid && p.raceId === currentRace.id)
+                    const pens = penalties.filter(p => p.playerId === pid && p.raceId === currentRace.id)
+                    if (!pred) return (
+                      <div key={pid} className="card p-3 flex items-center gap-3 opacity-50">
+                        <span>{pidAvatar}</span>
+                        <span className="font-bold text-sm flex-1">{pidName}</span>
+                        <span className="text-xs text-muted">Pas de prono</span>
+                      </div>
+                    )
+                    const { total, details, perfectPodium } = calculateRaceScore(pred.prediction, currentRace.result)
+                    const penTotal = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
+                    const net = Math.max(0, total - penTotal)
+                    return (
+                      <div key={pid} className="card p-3">
+                        <div className="flex items-center gap-2 mb-2">
                           <span>{pidAvatar}</span>
                           <span className="font-bold text-sm flex-1">{pidName}</span>
-                          <span className="text-xs text-muted">Pas de prono</span>
+                          {perfectPodium && <span className="text-xs text-gold">⭐ Parfait</span>}
+                          {penTotal > 0 && <span className="text-xs text-accent font-bold">-{penTotal} pén.</span>}
+                          <span className="font-black text-base" style={{ color: pidColor }}>{net} pts</span>
                         </div>
-                      )
-                      const { total, details, perfectPodium } = calculateRaceScore(pred.prediction, selectedRace.result)
-                      const penTotal = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
-                      const net = Math.max(0, total - penTotal)
-                      return (
-                        <div key={pid} className="card p-3">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span>{pidAvatar}</span>
-                            <span className="font-bold text-sm flex-1">{pidName}</span>
-                            {perfectPodium && <span className="text-xs text-gold">⭐ Parfait</span>}
-                            {penTotal > 0 && <span className="text-xs text-accent font-bold">-{penTotal} pén.</span>}
-                            <span className="font-black text-base" style={{ color: pidColor }}>
-                              {net} pts
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            {POSITIONS.map(pos => {
-                              const detail = details[pos]
-                              return (
-                                <div
-                                  key={pos}
-                                  className={`rounded-lg p-2 text-center border ${
-                                    detail === 'exact'  ? 'border-green-500  bg-green-500/10'  :
-                                    detail === 'podium' ? 'border-yellow-500 bg-yellow-500/10' :
-                                    'border-border bg-surfaceHigh/50'
-                                  }`}
-                                >
-                                  <div className={`text-[9px] font-bold mb-1 ${POS_COLOR[pos]}`}>{pos}</div>
-                                  <div className="text-xs font-bold truncate">{pred.prediction[pos]}</div>
-                                  <div className={`text-[9px] font-bold mt-1 ${
-                                    detail === 'exact'  ? 'text-green-400'  :
-                                    detail === 'podium' ? 'text-yellow-400' : 'text-muted'
-                                  }`}>
-                                    {detail === 'exact' ? '+10' : detail === 'podium' ? '+3' : '0'}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Upcoming: prediction form */
-              (() => {
-                const existingPred = getMyPrediction(selectedRace.id)
-                const isLocked = existingPred?.hasChanged === true
-
-                if (isLocked) {
-                  return (
-                    <div className="space-y-5">
-                      <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
-                        <span className="text-lg">🔒</span>
-                        <div>
-                          <p className="text-xs font-black text-yellow-400">Modification unique utilisée</p>
-                          <p className="text-xs text-muted mt-0.5">Ce pronostic ne peut plus être modifié</p>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="section-title">Votre pronostic (final)</p>
-                        <div className="space-y-3">
-                          {POSITIONS.map((pos, i) => {
-                            const driver = existingPred.prediction[pos]
-                            const teamColor = driver ? getTeamColor(driver) : null
+                        <div className="grid grid-cols-3 gap-2">
+                          {POSITIONS.map(pos => {
+                            const detail = details[pos]
                             return (
                               <div
                                 key={pos}
-                                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 opacity-80"
-                                style={driver ? { borderColor: teamColor + '60', backgroundColor: teamColor + '10' } : {}}
+                                className={`rounded-lg p-2 text-center border ${
+                                  detail === 'exact'  ? 'border-green-500  bg-green-500/10'  :
+                                  detail === 'podium' ? 'border-yellow-500 bg-yellow-500/10' :
+                                  'border-border bg-surfaceHigh/50'
+                                }`}
                               >
-                                <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>
-                                  {i + 1}
+                                <div className={`text-[9px] font-bold mb-1 ${POS_COLOR[pos]}`}>{pos}</div>
+                                <div className="text-xs font-bold truncate">{pred.prediction[pos]}</div>
+                                <div className={`text-[9px] font-bold mt-1 ${
+                                  detail === 'exact'  ? 'text-green-400'  :
+                                  detail === 'podium' ? 'text-yellow-400' : 'text-muted'
+                                }`}>
+                                  {detail === 'exact' ? '+10' : detail === 'podium' ? '+3' : '0'}
                                 </div>
-                                <div className="flex-1 text-left">
-                                  <p className="font-bold text-sm">{driver}</p>
-                                  <p className="text-xs text-muted">{getDriverTeam(driver)?.name}</p>
-                                </div>
-                                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: teamColor }} />
                               </div>
                             )
                           })}
                         </div>
                       </div>
-                    </div>
-                  )
-                }
+                    )
+                  })}
+                </div>
+              )}
 
+              {activeTab === 'pronostics' && currentRace.status !== 'completed' && (() => {
+                const existingPred = getMyPrediction(currentRace.id)
+                const isLocked = existingPred?.hasChanged === true
+                if (isLocked) return (
+                  <div className="space-y-5">
+                    <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                      <span className="text-lg">🔒</span>
+                      <div>
+                        <p className="text-xs font-black text-yellow-400">Modification unique utilisée</p>
+                        <p className="text-xs text-muted mt-0.5">Ce pronostic ne peut plus être modifié</p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="section-title">Votre pronostic (final)</p>
+                      <div className="space-y-3">
+                        {POSITIONS.map((pos, i) => {
+                          const driver = existingPred.prediction[pos]
+                          const teamColor = driver ? getTeamColor(driver) : null
+                          return (
+                            <div
+                              key={pos}
+                              className="w-full flex items-center gap-4 p-4 rounded-xl border-2 opacity-80"
+                              style={driver ? { borderColor: teamColor + '60', backgroundColor: teamColor + '10' } : {}}
+                            >
+                              <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>{i + 1}</div>
+                              <div className="flex-1 text-left">
+                                <p className="font-bold text-sm">{driver}</p>
+                                <p className="text-xs text-muted">{getDriverTeam(driver)?.name}</p>
+                              </div>
+                              <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: teamColor }} />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
                 return (
                   <div className="space-y-5">
                     <div>
@@ -530,9 +574,7 @@ export default function Courses({ currentPlayerId, addToast }) {
                               }`}
                               style={driver ? { borderColor: teamColor + '80', backgroundColor: teamColor + '15' } : {}}
                             >
-                              <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>
-                                {i + 1}
-                              </div>
+                              <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>{i + 1}</div>
                               {driver ? (
                                 <>
                                   <div className="flex-1 text-left">
@@ -555,23 +597,6 @@ export default function Courses({ currentPlayerId, addToast }) {
                         })}
                       </div>
                     </div>
-
-                    <div className="card-elevated rounded-xl p-4 space-y-1.5">
-                      <p className="section-title">Barème de points</p>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted">Position exacte</span>
-                        <span className="text-green-400 font-bold">+10 pts</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted">Sur le podium (mauvaise pos.)</span>
-                        <span className="text-yellow-400 font-bold">+3 pts</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted">Podium parfait (bonus)</span>
-                        <span className="text-gold font-bold">+5 pts</span>
-                      </div>
-                    </div>
-
                     <button
                       onClick={savePrediction}
                       disabled={!canSave || saving}
@@ -583,8 +608,190 @@ export default function Courses({ currentPlayerId, addToast }) {
                     </button>
                   </div>
                 )
-              })()
-            )}
+              })()}
+
+              {/* ── ONGLET RÉSULTAT ── */}
+              {activeTab === 'result' && (
+                <div className="space-y-5">
+                  {/* Podium officiel */}
+                  {currentRace.status === 'completed' && currentRace.result ? (
+                    <div>
+                      <p className="section-title">Podium officiel</p>
+                      <div className="space-y-2">
+                        {POSITIONS.map((pos, i) => {
+                          const driverName = currentRace.result[pos]
+                          const photoUrl   = getDriverPhoto(firestoreDrivers, driverName)
+                          return (
+                            <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
+                              <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>{i + 1}</div>
+                              <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                                {photoUrl
+                                  ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                                  : <span>{driverName?.[0] ?? '?'}</span>
+                                }
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-bold leading-tight">{driverName}</p>
+                                <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
+                              </div>
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getTeamColor(driverName) }} />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 p-3 bg-surfaceHigh rounded-lg">
+                      <span className="text-muted text-sm">Course pas encore disputée</span>
+                    </div>
+                  )}
+
+                  {/* Qualifications 2026 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="section-title mb-0">Qualifications 2026</p>
+                      {currentRace.qualifying_2026 && !currentRace.qualifying_locked && (
+                        <button
+                          onClick={() => fetchQualifying(currentRace, true)}
+                          disabled={qualRefreshing}
+                          className="text-muted text-sm hover:text-white transition-colors disabled:opacity-40"
+                          title="Rafraîchir depuis OpenF1"
+                        >
+                          {qualRefreshing ? '…' : '🔄'}
+                        </button>
+                      )}
+                    </div>
+
+                    {qualLoading ? (
+                      <div className="flex items-center gap-2 p-3 bg-surfaceHigh rounded-lg">
+                        <span className="text-muted text-sm animate-pulse">Chargement depuis OpenF1…</span>
+                      </div>
+                    ) : qualError ? (
+                      <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                        <p className="text-xs text-red-400">{qualError}</p>
+                        {currentRace.meeting_key_2026 && (
+                          <button
+                            onClick={() => fetchQualifying(currentRace)}
+                            className="text-xs text-accent mt-2 font-bold"
+                          >
+                            Réessayer
+                          </button>
+                        )}
+                      </div>
+                    ) : currentRace.qualifying_2026 ? (
+                      <div className="space-y-2">
+                        {POSITIONS.map((pos, i) => {
+                          const driverName = currentRace.qualifying_2026[pos]
+                          const photoUrl   = getDriverPhoto(firestoreDrivers, driverName)
+                          return (
+                            <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
+                              <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>{i + 1}</div>
+                              <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                                {photoUrl
+                                  ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                                  : <span>{driverName?.[0] ?? '?'}</span>
+                                }
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-bold leading-tight">{driverName}</p>
+                                <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
+                              </div>
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getTeamColor(driverName) }} />
+                            </div>
+                          )
+                        })}
+                        {currentRace.qualifying_locked && (
+                          <p className="text-[10px] text-muted text-right">🔒 Données figées</p>
+                        )}
+                      </div>
+                    ) : !currentRace.meeting_key_2026 ? (
+                      <p className="text-sm text-muted p-3">Qualifications pas encore disputées</p>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              {/* ── ONGLET HISTORIQUE ── */}
+              {activeTab === 'history' && (
+                <div className="space-y-5">
+                  {/* 2025 edition */}
+                  {currentRace.name === 'Espagne (Madrid)' ? (
+                    <div className="flex items-center gap-2 p-3 bg-surfaceHigh rounded-lg">
+                      <span className="text-sm">🆕</span>
+                      <span className="text-sm text-muted">Première édition — pas de données 2025</span>
+                    </div>
+                  ) : raceHistory ? (
+                    <div className="space-y-4">
+                      {/* Podium 2025 */}
+                      {raceHistory.podium_2025 && (
+                        <div>
+                          <p className="section-title">GP {currentRace.name} 2025</p>
+                          <div className="space-y-2">
+                            {POSITIONS.map((pos, i) => {
+                              const entry = raceHistory.podium_2025[pos]
+                              const photoUrl = getDriverPhoto(firestoreDrivers, entry?.name)
+                              return (
+                                <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
+                                  <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>{i + 1}</div>
+                                  <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                                    {photoUrl
+                                      ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                                      : <span>{entry?.name?.[0] ?? '?'}</span>
+                                    }
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="font-bold leading-tight">{entry?.name ?? '—'}</p>
+                                    <p className="text-[10px] text-muted">{entry?.team ?? ''}</p>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {/* Pole 2025 */}
+                      {raceHistory.pole_2025 && (
+                        <div>
+                          <p className="section-title">Pole Position 2025</p>
+                          <div className="flex items-center gap-3 p-3 card-elevated rounded-lg">
+                            <span className="text-xl">🏁</span>
+                            <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                              {(() => {
+                                const photoUrl = getDriverPhoto(firestoreDrivers, raceHistory.pole_2025.name)
+                                return photoUrl
+                                  ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                                  : <span>{raceHistory.pole_2025.name?.[0] ?? '?'}</span>
+                              })()}
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-bold leading-tight">{raceHistory.pole_2025.name}</p>
+                              <p className="text-[10px] text-muted">{raceHistory.pole_2025.team}</p>
+                            </div>
+                            {raceHistory.pole_2025.lap_duration && (
+                              <span className="text-xs font-bold text-accent">
+                                {raceHistory.pole_2025.lap_duration}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted p-3">Données historiques non disponibles</p>
+                  )}
+
+                  {/* Barème */}
+                  <div className="card-elevated rounded-xl p-4 space-y-1.5">
+                    <p className="section-title">Barème de points</p>
+                    <div className="flex justify-between text-xs"><span className="text-muted">Position exacte</span><span className="text-green-400 font-bold">+10 pts</span></div>
+                    <div className="flex justify-between text-xs"><span className="text-muted">Sur le podium (mauvaise pos.)</span><span className="text-yellow-400 font-bold">+3 pts</span></div>
+                    <div className="flex justify-between text-xs"><span className="text-muted">Podium parfait (bonus)</span><span className="text-gold font-bold">+5 pts</span></div>
+                    <div className="flex justify-between text-xs"><span className="text-muted">Pénalité changement tardif</span><span className="text-accent font-bold">-5 pts</span></div>
+                    <div className="flex justify-between text-xs"><span className="text-muted">Pénalité soumission tardive</span><span className="text-accent font-bold">-10 pts</span></div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </BottomSheet>
