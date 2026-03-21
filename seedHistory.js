@@ -60,8 +60,6 @@ const RACES_2026 = [
   { id:  1, name: 'Australie',        country: 'Australia' },
   { id:  2, name: 'Chine',            country: 'China' },
   { id:  3, name: 'Japon',            country: 'Japan' },
-  { id:  4, name: 'Bahreïn',          country: 'Bahrain' },
-  { id:  5, name: 'Arabie Saoudite',  country: 'Saudi Arabia' },
   { id:  6, name: 'Miami',            country: 'United States', location: 'Miami' },
   { id:  7, name: 'Canada',           country: 'Canada' },
   { id:  8, name: 'Monaco',           country: 'Monaco' },
