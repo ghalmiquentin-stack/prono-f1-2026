@@ -49,35 +49,10 @@ export function netScore(rawPlusBonus, penaltyTotal) {
 }
 
 /**
- * Calculate streak bonus.
- * Rule: best 3-consecutive-race total → +10 bonus (once, for best window).
- * Applied once per player per season.
+ * Per-player race scores without streak bonus.
+ * Use calculateAllSeasonScores for correct cross-player streak bonus.
  *
- * @param {Array<number|null>} raceNetScores - array of net scores per race (null = no prediction)
- * @returns {number} bonus points
- */
-export function calculateStreakBonus(raceNetScores) {
-  const filled = raceNetScores.filter(s => s !== null && s !== undefined)
-  if (filled.length < 3) return 0
-
-  let best = -Infinity
-  for (let i = 0; i <= raceNetScores.length - 3; i++) {
-    const window = raceNetScores.slice(i, i + 3)
-    if (window.every(s => s !== null && s !== undefined)) {
-      const sum = window.reduce((a, b) => a + b, 0)
-      if (sum > best) best = sum
-    }
-  }
-
-  return best > -Infinity ? 10 : 0
-}
-
-/**
- * Full season score for a player.
- * @param {Array} predictions - all predictions for this player
- * @param {Array} races - all races (with results)
- * @param {Array} penalties - all penalties for this player
- * @returns {{ total: number, raceScores: Array, streakBonus: number }}
+ * @returns {{ total: number, raceScores: Array, streakBonus: 0 }}
  */
 export function calculatePlayerSeasonScore(predictions, races, penalties) {
   const raceNetScores = []
@@ -114,11 +89,105 @@ export function calculatePlayerSeasonScore(predictions, races, penalties) {
     })
   }
 
-  const streakBonus = calculateStreakBonus(raceNetScores)
   const baseTotal = raceNetScores.reduce((sum, s) => sum + (s ?? 0), 0)
-  const total = baseTotal + streakBonus
+  return { total: baseTotal, raceScores, streakBonus: 0 }
+}
 
-  return { total, raceScores, streakBonus }
+/**
+ * Streak bonus from a boolean win-per-GP list.
+ * Every 3 consecutive wins → +10, counter resets (multiple streaks allowed).
+ */
+function calculateStreakBonusFromWins(wins) {
+  let bonus = 0
+  let consecutive = 0
+  for (const win of wins) {
+    if (win) {
+      consecutive++
+      if (consecutive === 3) {
+        bonus += 10
+        consecutive = 0
+      }
+    } else {
+      consecutive = 0
+    }
+  }
+  return bonus
+}
+
+/**
+ * Full season scores for ALL players with correct cross-player streak bonus.
+ *
+ * Rule: for each completed GP, the player(s) with the highest NET score
+ * "win" that GP (ties count as wins for all tied players). A player who
+ * wins 3 consecutive GPs earns +10. Counter resets after each trigger,
+ * allowing multiple streaks in a season.
+ *
+ * @param {Array} players
+ * @param {Array} sortedRaces - races sorted by id
+ * @param {Array} predictions
+ * @param {Array} penalties
+ * @returns {Array} - one entry per player: { ...player, total, raceScores, streakBonus }
+ */
+export function calculateAllSeasonScores(players, sortedRaces, predictions, penalties) {
+  // Step 1: per-player race scores (no streak bonus yet)
+  const perPlayer = players.map(player => {
+    const preds = predictions.filter(p => p.playerId === player.id)
+    const pens = penalties.filter(p => p.playerId === player.id)
+    const { raceScores } = calculatePlayerSeasonScore(preds, sortedRaces, pens)
+    return { player, raceScores }
+  })
+
+  // Step 2: per completed GP, find winner(s) = highest net score
+  const completedRaces = sortedRaces.filter(r => r.status === 'completed' && r.result)
+  const gpWinnersMap = completedRaces.map(race => {
+    const nets = perPlayer.map(pd => ({
+      playerId: pd.player.id,
+      net: pd.raceScores.find(rs => rs.raceId === race.id)?.net ?? null,
+    })).filter(x => x.net !== null)
+
+    if (!nets.length) return { raceId: race.id, raceName: race.name, winners: [], maxNet: 0 }
+    const maxNet = Math.max(...nets.map(x => x.net))
+    const winners = nets.filter(x => x.net === maxNet).map(x => x.playerId)
+    return { raceId: race.id, raceName: race.name, winners, maxNet }
+  })
+
+  // Step 3: streak bonus + final total per player
+  const result = perPlayer.map(({ player, raceScores }) => {
+    const gpWins = completedRaces.map(race =>
+      gpWinnersMap.find(g => g.raceId === race.id)?.winners.includes(player.id) ?? false
+    )
+    const streakBonus = calculateStreakBonusFromWins(gpWins)
+    const baseTotal = raceScores.reduce((sum, rs) => sum + (rs.net ?? 0), 0)
+    return { ...player, total: baseTotal + streakBonus, raceScores, streakBonus }
+  })
+
+  // Debug log: rapport de calcul du bonus série
+  console.group('[Bonus Série] Rapport de calcul')
+  gpWinnersMap.forEach(gp => {
+    const scores = perPlayer
+      .map(pd => {
+        const rs = pd.raceScores.find(r => r.raceId === gp.raceId)
+        return `${pd.player.id}=${rs?.net ?? 'N/A'}`
+      })
+      .join(' | ')
+    console.log(`GP ${gp.raceName} → gagnant(s): [${gp.winners.join(', ')}] (max net=${gp.maxNet}) — ${scores}`)
+  })
+  const triggered = result.filter(p => p.streakBonus > 0)
+  if (triggered.length) {
+    triggered.forEach(p => console.log(`✓ Bonus série +${p.streakBonus} pts → ${p.id}`))
+  } else {
+    console.log('Aucun bonus série déclenché (< 3 victoires consécutives)')
+  }
+  result.forEach(p => {
+    const wins = completedRaces.map(race => {
+      const g = gpWinnersMap.find(g => g.raceId === race.id)
+      return g?.winners.includes(p.id) ? 'W' : 'L'
+    })
+    console.log(`  ${p.id}: [${wins.join('')}] → streakBonus=${p.streakBonus} total=${p.total}`)
+  })
+  console.groupEnd()
+
+  return result
 }
 
 /**

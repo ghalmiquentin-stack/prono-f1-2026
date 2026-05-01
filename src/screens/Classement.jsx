@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useCollection } from '../hooks/useFirestore'
-import { calculatePlayerSeasonScore } from '../utils/scoring'
+import { calculateAllSeasonScores } from '../utils/scoring'
 import Skeleton from '../components/Skeleton'
 
 // Dense ranking: same points → same rank, no gap after ties
@@ -56,23 +56,23 @@ export default function Classement({ currentPlayerId }) {
   // Build standings — all display values from Firestore (no hardcoded fallback maps)
   const standings = useMemo(() => {
     if (!players.length) return []
-    const raw = players.map(player => {
-      const preds = predictions.filter(p => p.playerId === player.id)
-      const pens  = penalties.filter(p => p.playerId === player.id)
-      const { total, raceScores, streakBonus } = calculatePlayerSeasonScore(preds, sortedRaces, pens)
-      const racesPlayed    = raceScores.filter(rs => rs.net !== null).length
-      const avgScore       = racesPlayed > 0 ? (total / racesPlayed).toFixed(1) : '0.0'
-      const perfectPodiums = raceScores.filter(rs => rs.perfectPodium).length
-      const bestScore      = raceScores.reduce((best, rs) => Math.max(best, rs.net ?? 0), 0)
-      return {
-        ...player,
-        color:       String(player.color       ?? '#6B6B8A'),
-        avatar:      String(player.avatar      ?? '🏎️'),
-        displayName: String(player.displayName ?? player.id),
-        total, raceScores, streakBonus,
-        racesPlayed, avgScore, perfectPodiums, bestScore,
-      }
-    }).sort((a, b) => b.total - a.total)
+    const raw = calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
+      .map(player => {
+        const { total, raceScores, streakBonus } = player
+        const racesPlayed    = raceScores.filter(rs => rs.net !== null).length
+        const avgScore       = racesPlayed > 0 ? (total / racesPlayed).toFixed(1) : '0.0'
+        const perfectPodiums = raceScores.filter(rs => rs.perfectPodium).length
+        const bestScore      = raceScores.reduce((best, rs) => Math.max(best, rs.net ?? 0), 0)
+        return {
+          ...player,
+          color:       String(player.color       ?? '#6B6B8A'),
+          avatar:      String(player.avatar      ?? '🏎️'),
+          displayName: String(player.displayName ?? player.id),
+          total, raceScores, streakBonus,
+          racesPlayed, avgScore, perfectPodiums, bestScore,
+        }
+      })
+      .sort((a, b) => b.total - a.total)
     return rankWithTies(raw)
   }, [players, races, predictions, penalties, sortedRaces])
 

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useCollection } from '../hooks/useFirestore'
-import { calculatePlayerSeasonScore, calculateRaceScore } from '../utils/scoring'
+import { calculateAllSeasonScores, calculateRaceScore } from '../utils/scoring'
 import { getTeamColor, getDriverTeam } from '../data/drivers'
 import Countdown from '../components/Countdown'
 import Skeleton, { SkeletonCard } from '../components/Skeleton'
@@ -107,12 +107,8 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
 
   const standings = useMemo(() => {
     if (!players.length || !races.length) return []
-    const raw = players.map(player => {
-      const preds = predictions.filter(p => p.playerId === player.id)
-      const pens = penalties.filter(p => p.playerId === player.id)
-      const { total, raceScores, streakBonus } = calculatePlayerSeasonScore(preds, sortedRaces, pens)
-      return { ...player, total, raceScores, streakBonus }
-    }).sort((a, b) => b.total - a.total)
+    const raw = calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
+      .sort((a, b) => b.total - a.total)
     return rankWithTies(raw)
   }, [players, races, predictions, penalties, sortedRaces])
 

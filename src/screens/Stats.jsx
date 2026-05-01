@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useCollection } from '../hooks/useFirestore'
-import { calculatePlayerSeasonScore } from '../utils/scoring'
+import { calculateAllSeasonScores } from '../utils/scoring'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
@@ -83,12 +83,12 @@ export default function Stats({ currentPlayerId }) {
 
   const playerStats = useMemo(() => {
     if (!players.length) return []
+    const allScores = calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
     return PLAYERS_ORDER.map(pid => {
-      const player = players.find(p => p.id === pid)
-      if (!player) return null
-      const preds = predictions.filter(p => p.playerId === pid)
+      const scored = allScores.find(p => p.id === pid)
+      if (!scored) return null
+      const { total, raceScores, streakBonus } = scored
       const pens = penalties.filter(p => p.playerId === pid)
-      const { total, raceScores, streakBonus } = calculatePlayerSeasonScore(preds, sortedRaces, pens)
 
       const racesPlayed = raceScores.filter(rs => rs.net !== null).length
       const avgScore = racesPlayed > 0 ? +(total / racesPlayed).toFixed(1) : 0
@@ -107,7 +107,7 @@ export default function Stats({ currentPlayerId }) {
       })
 
       return {
-        ...player,
+        ...scored,
         total, raceScores, streakBonus,
         racesPlayed, avgScore, perfectPodiums, bestScore,
         totalPenalties, exactHits, podiumHits, cumulativeScores,
