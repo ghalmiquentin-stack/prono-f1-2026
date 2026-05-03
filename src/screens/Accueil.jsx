@@ -243,9 +243,6 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-green-500" />
                   <span className="text-sm text-green-400 font-semibold">Pronostic soumis</span>
-                  <span className="text-muted text-xs ml-auto font-mono">
-                    {myPrediction.prediction?.P1} · {myPrediction.prediction?.P2} · {myPrediction.prediction?.P3}
-                  </span>
                 </div>
               ) : (
                 <div className="flex items-center justify-between">

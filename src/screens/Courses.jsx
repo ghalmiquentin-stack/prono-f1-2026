@@ -355,15 +355,22 @@ export default function Courses({ currentPlayerId, addToast }) {
                 {isCompleted && race.result && (
                   <div className="mt-3 pt-3 border-t border-border/40 space-y-1.5">
                     {POSITIONS.map((pos, i) => {
-                      const real   = race.result[pos]
-                      const detail = myScoreData?.details?.[pos]
-                      const myPick = myScoreData?.prediction?.[pos]
+                      const real     = race.result[pos]
+                      const detail   = myScoreData?.details?.[pos]
+                      const myPick   = myScoreData?.prediction?.[pos]
+                      const photoUrl = getDriverPhoto(firestoreDrivers, real)
                       return (
                         <div key={pos} className="flex items-center gap-2">
                           <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black text-bg shrink-0 ${
                             i === 0 ? 'bg-gold' : i === 1 ? 'bg-silver' : 'bg-bronze'
                           }`}>
                             {i + 1}
+                          </div>
+                          <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-[9px] font-bold text-muted">
+                            {photoUrl
+                              ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                              : <span>{real?.[0] ?? '?'}</span>
+                            }
                           </div>
                           <span className="text-sm font-bold flex-1">{real}</span>
                           {detail !== undefined ? (
@@ -382,12 +389,22 @@ export default function Courses({ currentPlayerId, addToast }) {
 
                 {/* ── Upcoming: prediction preview ── */}
                 {!isCompleted && myPred && (
-                  <div className="mt-2 flex items-center gap-2">
-                    {POSITIONS.map(pos => (
-                      <span key={pos} className={`text-[10px] font-bold ${POS_COLOR[pos]}`}>
-                        {myPred.prediction?.[pos]}
-                      </span>
-                    ))}
+                  <div className="mt-2 flex items-center gap-3">
+                    {POSITIONS.map(pos => {
+                      const driverName = myPred.prediction?.[pos]
+                      const photoUrl   = getDriverPhoto(firestoreDrivers, driverName)
+                      return (
+                        <div key={pos} className="flex items-center gap-1">
+                          <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-[8px] font-bold text-muted">
+                            {photoUrl
+                              ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                              : <span>{driverName?.[0] ?? '?'}</span>
+                            }
+                          </div>
+                          <span className={`text-[10px] font-bold ${POS_COLOR[pos]}`}>{driverName}</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </button>
@@ -484,7 +501,9 @@ export default function Courses({ currentPlayerId, addToast }) {
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                           {POSITIONS.map(pos => {
-                            const detail = details[pos]
+                            const driverName = pred.prediction[pos]
+                            const photoUrl   = getDriverPhoto(firestoreDrivers, driverName)
+                            const detail     = details[pos]
                             return (
                               <div
                                 key={pos}
@@ -495,7 +514,13 @@ export default function Courses({ currentPlayerId, addToast }) {
                                 }`}
                               >
                                 <div className={`text-[9px] font-bold mb-1 ${POS_COLOR[pos]}`}>{pos}</div>
-                                <div className="text-xs font-bold truncate">{pred.prediction[pos]}</div>
+                                <div className="w-8 h-8 rounded-full overflow-hidden mx-auto mb-1 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                                  {photoUrl
+                                    ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                                    : <span>{driverName?.[0] ?? '?'}</span>
+                                  }
+                                </div>
+                                <div className="text-xs font-bold truncate">{driverName}</div>
                                 <div className={`text-[9px] font-bold mt-1 ${
                                   detail === 'exact'  ? 'text-green-400'  :
                                   detail === 'podium' ? 'text-yellow-400' : 'text-muted'
