@@ -504,6 +504,7 @@ export default function Courses({ currentPlayerId, addToast }) {
                             const driverName = pred.prediction[pos]
                             const photoUrl   = getDriverPhoto(firestoreDrivers, driverName)
                             const detail     = details[pos]
+                            const isModified = pred.hasChanged && pred.prediction[pos] !== pred.initialPrediction?.[pos]
                             return (
                               <div
                                 key={pos}
@@ -521,6 +522,9 @@ export default function Courses({ currentPlayerId, addToast }) {
                                   }
                                 </div>
                                 <div className="text-xs font-bold truncate">{driverName}</div>
+                                {isModified && (
+                                  <span className="inline-block text-[8px] font-bold px-1 py-0.5 rounded mt-0.5" style={{ color: '#E8002D', backgroundColor: '#E8002D22' }}>Modifié</span>
+                                )}
                                 <div className={`text-[9px] font-bold mt-1 ${
                                   detail === 'exact'  ? 'text-green-400'  :
                                   detail === 'podium' ? 'text-yellow-400' : 'text-muted'

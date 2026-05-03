@@ -353,8 +353,9 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
                       <div className="grid grid-cols-3 gap-2">
                         {POSITIONS.map(pos => {
                           const driverName = pred.prediction?.[pos]
-                          const photoUrl = getDriverPhoto(drivers, driverName)
-                          const teamColor = getTeamColor(driverName)
+                          const photoUrl   = getDriverPhoto(drivers, driverName)
+                          const teamColor  = getTeamColor(driverName)
+                          const isModified = pred.hasChanged && pred.prediction?.[pos] !== pred.initialPrediction?.[pos]
                           return (
                             <div key={pos} className="rounded-lg overflow-hidden border border-border bg-surfaceHigh/50">
                               <div className="h-1" style={{ backgroundColor: teamColor ?? '#6B6B8A' }} />
@@ -367,6 +368,9 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
                                   }
                                 </div>
                                 <div className="text-[10px] font-bold truncate w-full text-center leading-tight">{driverName}</div>
+                                {isModified && (
+                                  <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{ color: '#E8002D', backgroundColor: '#E8002D22' }}>Modifié</span>
+                                )}
                               </div>
                             </div>
                           )
