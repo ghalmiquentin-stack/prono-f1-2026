@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useCollection } from '../hooks/useFirestore'
-import { calculateAllSeasonScores, calculateRaceScore } from '../utils/scoring'
+import { calculateAllSeasonScores } from '../utils/scoring'
 import { getTeamColor, getDriverTeam } from '../data/drivers'
 import Countdown from '../components/Countdown'
 import Skeleton, { SkeletonCard } from '../components/Skeleton'
@@ -135,6 +135,12 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
       dubai: formatTimeInTz(raceUtcTime, 'Asia/Dubai'),
       dubaiTz: getTzAbbr(raceUtcTime, 'Asia/Dubai'),
     }
+  }, [raceUtcTime])
+
+  const isLocked = useMemo(() => {
+    if (!raceUtcTime) return false
+    const diff = new Date(raceUtcTime).getTime() - Date.now()
+    return diff >= 0 && diff < 60 * 60 * 1000
   }, [raceUtcTime])
 
   // Helper: get player data (color, avatar, displayName) from Firebase with fallbacks
@@ -309,18 +315,83 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
           </div>
         ) : null}
 
-        {/* ── 3. Dernière course ── détail complet */}
+        {/* ── 3. Pronostics du prochain GP ── */}
+        {nextRace && (
+          loading ? (
+            <SkeletonCard />
+          ) : (
+            <div className="card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="section-title">Pronostics — GP {nextRace.name} 🏁</span>
+                {isLocked && (
+                  <span className="text-xs text-red-400 font-bold">🔒 Verrouillés</span>
+                )}
+              </div>
+              <div className="space-y-3">
+                {standings.map(player => {
+                  const color = String(player.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
+                  const avatar = String(player.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
+                  const displayName = String(player.displayName ?? player.id)
+                  const pred = predictions.find(p => p.playerId === player.id && p.raceId === nextRace.id)
+                  const pens = penalties.filter(p => p.playerId === player.id && p.raceId === nextRace.id)
+                  const penTotal = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
+
+                  if (!pred) return (
+                    <div key={player.id} className="card p-3 flex items-center gap-3">
+                      <span className="text-xl leading-none">{avatar}</span>
+                      <span className="font-bold text-sm flex-1" style={{ color }}>{displayName}</span>
+                      <span className="text-xs text-muted">⏳ En attente de prono...</span>
+                    </div>
+                  )
+
+                  return (
+                    <div key={player.id} className="card p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xl leading-none">{avatar}</span>
+                        <span className="font-bold text-sm flex-1" style={{ color }}>{displayName}</span>
+                        {penTotal > 0 && (
+                          <span className="text-xs text-red-400 font-bold">-{penTotal} pén.</span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {POSITIONS.map(pos => {
+                          const driverName = pred.prediction?.[pos]
+                          const photoUrl = getDriverPhoto(drivers, driverName)
+                          const teamColor = getTeamColor(driverName)
+                          return (
+                            <div key={pos} className="rounded-lg overflow-hidden border border-border bg-surfaceHigh/50">
+                              <div className="h-1" style={{ backgroundColor: teamColor ?? '#6B6B8A' }} />
+                              <div className="p-2 flex flex-col items-center gap-1">
+                                <div className={`text-[9px] font-bold ${POS_COLOR[pos]}`}>{pos}</div>
+                                <div className="w-9 h-9 rounded-full overflow-hidden bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted shrink-0">
+                                  {photoUrl
+                                    ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                                    : <span>{driverName?.[0] ?? '?'}</span>
+                                  }
+                                </div>
+                                <div className="text-[10px] font-bold truncate w-full text-center leading-tight">{driverName}</div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        )}
+
+        {/* ── 4. Dernière course ── résultat officiel */}
         {loading ? (
           <SkeletonCard />
         ) : lastRace?.result ? (
           <div className="card p-5">
-            {/* Header */}
             <div className="flex items-center gap-3 mb-1">
               <span className="text-3xl">{lastRace.flag}</span>
               <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-accent font-bold text-xs uppercase tracking-widest">Dernière course</span>
-                </div>
+                <span className="text-accent font-bold text-xs uppercase tracking-widest">Dernière course</span>
                 <h3 className="font-black text-base leading-tight">GP {lastRace.name}</h3>
                 <p className="text-xs text-muted">
                   {new Date(lastRace.date + 'T00:00:00').toLocaleDateString('fr-FR', {
@@ -332,101 +403,32 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
                 </p>
               </div>
             </div>
-
-            <div className="space-y-4 mt-4">
-              {/* Résultat officiel */}
-              <div>
-                <p className="section-title">Résultat officiel</p>
-                <div className="space-y-2">
-                  {POSITIONS.map((pos, i) => {
-                    const driverName = lastRace.result[pos]
-                    const photoUrl   = getDriverPhoto(drivers, driverName)
-                    return (
-                      <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
-                        <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>
-                          {i + 1}
-                        </div>
-                        <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                          {photoUrl
-                            ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                            : <span>{driverName?.[0] ?? '?'}</span>
-                          }
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-bold leading-tight">{driverName}</p>
-                          <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
-                        </div>
-                        <div
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: getTeamColor(driverName) }}
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Pronostics des joueurs */}
-              <div>
-                <p className="section-title">Pronostics des joueurs</p>
-                <div className="space-y-3">
-                  {PLAYERS_ORDER.map(pid => {
-                    const { color, avatar, displayName } = getPlayerData(pid)
-                    const pred = predictions.find(p => p.playerId === pid && p.raceId === lastRace.id)
-                    const pens = penalties.filter(p => p.playerId === pid && p.raceId === lastRace.id)
-
-                    if (!pred) return (
-                      <div key={pid} className="card p-3 flex items-center gap-3 opacity-50">
-                        <span>{avatar}</span>
-                        <span className="font-bold text-sm flex-1">{displayName}</span>
-                        <span className="text-xs text-muted">Pas de prono</span>
-                      </div>
-                    )
-
-                    const { total, details, perfectPodium } = calculateRaceScore(pred.prediction, lastRace.result)
-                    const penTotal = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
-                    const net = Math.max(0, total - penTotal)
-
-                    return (
-                      <div key={pid} className="card p-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span>{avatar}</span>
-                          <span className="font-bold text-sm flex-1">{displayName}</span>
-                          {perfectPodium && <span className="text-xs text-gold">⭐ Parfait</span>}
-                          {penTotal > 0 && <span className="text-xs text-accent font-bold">-{penTotal} pén.</span>}
-                          <span className="font-black text-base" style={{ color }}>
-                            {net} pts
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          {POSITIONS.map(pos => {
-                            const detail = details[pos]
-                            return (
-                              <div
-                                key={pos}
-                                className={`rounded-lg p-2 text-center border ${
-                                  detail === 'exact'  ? 'border-green-500  bg-green-500/10'  :
-                                  detail === 'podium' ? 'border-yellow-500 bg-yellow-500/10' :
-                                  'border-border bg-surfaceHigh/50'
-                                }`}
-                              >
-                                <div className={`text-[9px] font-bold mb-1 ${POS_COLOR[pos]}`}>{pos}</div>
-                                <div className="text-xs font-bold truncate">{pred.prediction[pos]}</div>
-                                <div className={`text-[9px] font-bold mt-1 ${
-                                  detail === 'exact'  ? 'text-green-400'  :
-                                  detail === 'podium' ? 'text-yellow-400' : 'text-muted'
-                                }`}>
-                                  {detail === 'exact' ? '+10' : detail === 'podium' ? '+3' : '0'}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
+            <div className="mt-4 space-y-2">
+              {POSITIONS.map((pos, i) => {
+                const driverName = lastRace.result[pos]
+                const photoUrl   = getDriverPhoto(drivers, driverName)
+                return (
+                  <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
+                    <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>
+                      {i + 1}
+                    </div>
+                    <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                      {photoUrl
+                        ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                        : <span>{driverName?.[0] ?? '?'}</span>
+                      }
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-bold leading-tight">{driverName}</p>
+                      <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
+                    </div>
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: getTeamColor(driverName) }}
+                    />
+                  </div>
+                )
+              })}
             </div>
           </div>
         ) : null}
