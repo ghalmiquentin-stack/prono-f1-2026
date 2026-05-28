@@ -128,10 +128,6 @@
   animation: shimmer 1.5s infinite;
 }
 
-/* Bottom nav safe area */
-.bottom-nav {
-  padding-bottom: 0;
-}
 
 /* Safe bottom padding for sheet content */
 .pb-safe {

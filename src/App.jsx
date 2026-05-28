@@ -52,17 +52,13 @@ export default function App() {
   }
 
   return (
-    <div className="h-[100svh] flex flex-col bg-bg">
+    <div className="bg-bg">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      {/* Main content - scrolls internally, nav stays pinned below */}
-      <main className="flex-1 overflow-y-auto safe-top" id="app-main">
+      <main className="safe-top" id="app-main" style={{ paddingBottom: '100px' }}>
         {renderScreen()}
-        {/* Spacer so last content clears the sticky nav */}
-        <div className="h-4" />
       </main>
 
-      {/* Bottom navigation - sticky in flex flow, immune to Chrome iOS toolbar */}
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
     </div>
   )
