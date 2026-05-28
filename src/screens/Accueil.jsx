@@ -64,6 +64,23 @@ function getDriverPhoto(drivers, displayName) {
   return drivers.find(d => d.last_name?.toLowerCase() === displayName.toLowerCase())?.headshot_url ?? null
 }
 
+function formatPredTime(ts) {
+  if (!ts) return null
+  const date = ts?.toDate?.() ?? new Date(ts)
+  const datePart = date.toLocaleDateString('fr-FR', {
+    timeZone: 'Europe/Paris', weekday: 'short', day: 'numeric', month: 'short',
+  })
+  const timeInTz = (tz) => {
+    const parts = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(date)
+    const h = parts.find(p => p.type === 'hour')?.value ?? '00'
+    const m = parts.find(p => p.type === 'minute')?.value ?? '00'
+    return `${h}h${m}`
+  }
+  return `${datePart} à ${timeInTz('Europe/Paris')} 🇫🇷 / ${timeInTz('Asia/Dubai')} 🇦🇪`
+}
+
 export default function Accueil({ currentPlayerId, setActiveTab }) {
   const { data: players, loading: playersLoading } = useCollection('players')
   const { data: races, loading: racesLoading } = useCollection('races')
@@ -376,6 +393,20 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
                           )
                         })}
                       </div>
+                      {pred.submittedAt && (
+                        <div className="mt-2 space-y-0.5">
+                          <p className="text-xs text-muted italic">
+                            Soumis le {formatPredTime(pred.submittedAt)}
+                          </p>
+                          {pred.hasChanged && pred.modifiedAt &&
+                           (pred.modifiedAt?.toDate?.() ?? new Date(pred.modifiedAt)).getTime() !==
+                           (pred.submittedAt?.toDate?.() ?? new Date(pred.submittedAt)).getTime() && (
+                            <p className="text-xs text-muted italic">
+                              Modifié le {formatPredTime(pred.modifiedAt)}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
