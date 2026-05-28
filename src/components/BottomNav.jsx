@@ -49,7 +49,7 @@ const TABS = [
 
 export default function BottomNav({ activeTab, setActiveTab }) {
   return (
-    <nav className="z-50 bg-surface/95 backdrop-blur-md border-t border-border" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '6px 4px env(safe-area-inset-bottom, 8px)' }}>
+    <nav className="z-50 bg-surface/95 backdrop-blur-md border-t border-border" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '6px 4px env(safe-area-inset-bottom, 0px)' }}>
       <div className="flex items-center h-14">
         {TABS.map(tab => {
           const active = activeTab === tab.id
