@@ -52,7 +52,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-[100dvh] flex flex-col bg-bg">
+    <div className="h-[100svh] flex flex-col bg-bg">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
       {/* Main content - scrolls internally, nav stays pinned below */}
