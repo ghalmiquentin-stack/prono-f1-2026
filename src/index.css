@@ -130,7 +130,7 @@
 
 /* Bottom nav safe area */
 .bottom-nav {
-  padding-bottom: max(env(safe-area-inset-bottom), 8px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Safe bottom padding for sheet content */
