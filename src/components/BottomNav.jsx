@@ -50,7 +50,7 @@ const TABS = [
 export default function BottomNav({ activeTab, setActiveTab }) {
   return (
     <nav className="sticky bottom-0 z-50 flex-shrink-0 bg-surface/95 backdrop-blur-md border-t border-border bottom-nav">
-      <div className="flex items-stretch">
+      <div className="flex items-center h-14">
         {TABS.map(tab => {
           const active = activeTab === tab.id
           return (
