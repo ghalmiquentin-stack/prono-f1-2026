@@ -5,7 +5,7 @@ export const RACES = [
   { id:  1, name: 'Australie',          flag: '🇦🇺', city: 'Melbourne',    circuit: 'Albert Park',          date: '2026-03-08', raceTime: '05:00', raceTimeUTC: '04:00', status: 'upcoming', result: null },
   { id:  2, name: 'Chine',              flag: '🇨🇳', city: 'Shanghai',     circuit: 'Shanghai',             date: '2026-03-15', raceTime: '08:00', raceTimeUTC: '07:00', status: 'upcoming', result: null },
   { id:  3, name: 'Japon',              flag: '🇯🇵', city: 'Suzuka',       circuit: 'Suzuka',               date: '2026-03-29', raceTime: '07:00', raceTimeUTC: '05:00', status: 'upcoming', result: null },
-  { id:  6, name: 'Miami',              flag: '🇺🇸', city: 'Miami',        circuit: 'Miami International',  date: '2026-05-03', raceTime: '22:00', raceTimeUTC: '20:00', status: 'upcoming', result: null },
+  { id:  6, name: 'Miami',              flag: '🇺🇸', city: 'Miami',        circuit: 'Miami International',  date: '2026-05-03', raceTime: '19:00', raceTimeUTC: '17:00', status: 'upcoming', result: null },
   { id:  7, name: 'Canada',             flag: '🇨🇦', city: 'Montréal',     circuit: 'Gilles Villeneuve',    date: '2026-05-24', raceTime: '22:00', raceTimeUTC: '20:00', status: 'upcoming', result: null },
   { id:  8, name: 'Monaco',             flag: '🇲🇨', city: 'Monte-Carlo',  circuit: 'Circuit de Monaco',    date: '2026-06-07', raceTime: '15:00', raceTimeUTC: '13:00', status: 'upcoming', result: null },
   { id:  9, name: 'Espagne',            flag: '🇪🇸', city: 'Barcelone',    circuit: 'Circuit de Barcelone', date: '2026-06-14', raceTime: '15:00', raceTimeUTC: '13:00', status: 'upcoming', result: null },

@@ -58,7 +58,7 @@ export default function BottomNav({ activeTab, setActiveTab }) {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`
-                flex-1 flex flex-col items-center justify-center gap-1 pt-2 pb-1
+                flex-1 flex flex-col items-center justify-center gap-0.5 pt-1 pb-0.5
                 transition-all duration-200 active:scale-95
                 ${active ? 'tab-active' : 'text-muted hover:text-white'}
               `}
