@@ -348,7 +348,11 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
                   const displayName = String(player.displayName ?? player.id)
                   const pred = predictions.find(p => p.playerId === player.id && p.raceId === nextRace.id)
                   const pens = penalties.filter(p => p.playerId === player.id && p.raceId === nextRace.id)
-                  const penTotal = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
+                  const penTotal = pens.reduce((s, p) => {
+                    if (p.type === 'late') return s + 10
+                    if (p.type === 'change' && pred?.hasChanged) return s + 5
+                    return s
+                  }, 0)
 
                   if (!pred) return (
                     <div key={player.id} className="card p-3 flex items-center gap-3">
