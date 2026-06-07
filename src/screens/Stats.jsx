@@ -3,7 +3,7 @@ import { useCollection } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer,
+  Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import Skeleton from '../components/Skeleton'
 
@@ -350,90 +350,69 @@ export default function Stats({ currentPlayerId }) {
         </div>
       )}
 
-      {/* Per-race scores bar chart — pure CSS, no Recharts */}
+      {/* Per-race scores bar chart — Recharts BarChart */}
       {raceScoresChartData.length > 0 && (() => {
-        const BAR_H = 120
         const allVals = raceScoresChartData.flatMap(e => PLAYERS_ORDER.map(pid => e[pid] ?? 0))
-        const maxPos = Math.max(0, ...allVals)
-        const maxNeg = Math.abs(Math.min(0, ...allVals))
-        const totalRange = Math.max(1, maxPos + maxNeg)
-        const posZoneH = maxNeg > 0 ? Math.max(12, Math.round((maxPos / totalRange) * BAR_H)) : BAR_H
-        const negZoneH = BAR_H - posZoneH
+        const minVal = Math.min(0, ...allVals)
+        const maxVal = Math.max(0, ...allVals)
+        const domainMin = minVal < 0 ? minVal - 2 : 0
+        const domainMax = maxVal + 2
         return (
           <div className="px-5 mb-6">
             <p className="section-title">Scores par course</p>
-            <div className="card p-4">
-              {/* Legend */}
-              <div className="flex gap-3 mb-3 flex-wrap">
-                {PLAYERS_ORDER.map(pid => {
-                  const player = playerStats.find(p => p.id === pid)
-                  const color = String(player?.color ?? PLAYER_COLORS[pid])
-                  const name = String(player?.displayName ?? pid)
-                  return (
-                    <div key={pid} className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: color }} />
-                      <span className="text-[10px] text-muted">{name}</span>
-                    </div>
-                  )
-                })}
-              </div>
-              {/* Groups */}
-              <div className="flex gap-3">
-                {raceScoresChartData.map(entry => (
-                  <div key={entry.name} className="flex-1 min-w-0 flex flex-col items-center">
-                    <div style={{ width: '100%', height: BAR_H }}>
-                      {/* Positive zone — bars grow upward */}
-                      <div className="flex items-end justify-center gap-0.5" style={{ height: posZoneH }}>
-                        {PLAYERS_ORDER.map(pid => {
-                          const player = playerStats.find(p => p.id === pid)
-                          const color = String(player?.color ?? PLAYER_COLORS[pid])
-                          const val = entry[pid] ?? 0
-                          const barH = val > 0 ? Math.max(2, Math.round((val / totalRange) * BAR_H)) : 0
-                          return (
-                            <div key={pid} className="flex flex-col items-center justify-end" style={{ height: posZoneH }}>
-                              {val > 0 && (
-                                <span className="text-[8px] font-black mb-0.5 leading-none" style={{ color }}>{val}</span>
-                              )}
-                              {val > 0 && (
-                                <div style={{ width: 10, height: barH, backgroundColor: color, borderRadius: '2px 2px 0 0' }} />
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                      {/* Zero line */}
-                      {negZoneH > 0 && (
-                        <div style={{ height: 1, backgroundColor: '#6B6B8A', opacity: 0.5 }} />
-                      )}
-                      {/* Negative zone — bars grow downward */}
-                      {negZoneH > 0 && (
-                        <div className="flex items-start justify-center gap-0.5" style={{ height: negZoneH - 1 }}>
-                          {PLAYERS_ORDER.map(pid => {
-                            const player = playerStats.find(p => p.id === pid)
-                            const color = String(player?.color ?? PLAYER_COLORS[pid])
-                            const val = entry[pid] ?? 0
-                            const barH = val < 0 ? Math.max(2, Math.round((Math.abs(val) / totalRange) * BAR_H)) : 0
+            <div className="card p-4" style={{ backgroundColor: '#15151E' }}>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart
+                  data={raceScoresChartData}
+                  margin={{ top: 16, right: 5, left: -20, bottom: 28 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2E2E42" />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: '#6B6B8A', fontSize: 10 }}
+                    angle={-25}
+                    textAnchor="end"
+                    interval={0}
+                  />
+                  <YAxis
+                    tick={{ fill: '#6B6B8A', fontSize: 10 }}
+                    domain={[domainMin, domainMax]}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" />
+                  {PLAYERS_ORDER.map(pid => {
+                    const player = playerStats.find(p => p.id === pid)
+                    const color = String(player?.color ?? PLAYER_COLORS[pid])
+                    return (
+                      <Bar
+                        key={pid}
+                        dataKey={pid}
+                        fill={color}
+                        name={String(player?.displayName ?? pid)}
+                        radius={[2, 2, 0, 0]}
+                        label={{
+                          content: ({ x, y, width, height, value }) => {
+                            if (!value) return null
+                            const isPos = value > 0
                             return (
-                              <div key={pid} className="flex flex-col items-center justify-start" style={{ height: negZoneH - 1 }}>
-                                {val < 0 && (
-                                  <div style={{ width: 10, height: barH, backgroundColor: color, opacity: 0.7, borderRadius: '0 0 2px 2px' }} />
-                                )}
-                                {val < 0 && (
-                                  <span className="text-[8px] font-black mt-0.5 leading-none" style={{ color }}>{val}</span>
-                                )}
-                              </div>
+                              <text
+                                x={x + width / 2}
+                                y={isPos ? y - 3 : y + Math.abs(height) + 10}
+                                textAnchor="middle"
+                                fill={color}
+                                fontSize={8}
+                                fontWeight="bold"
+                              >
+                                {value}
+                              </text>
                             )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    {/* GP label */}
-                    <p className="text-[9px] text-muted mt-1.5 text-center w-full truncate leading-tight">
-                      {entry.name}
-                    </p>
-                  </div>
-                ))}
-              </div>
+                          },
+                        }}
+                      />
+                    )
+                  })}
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         )
