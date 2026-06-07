@@ -109,7 +109,7 @@ export default function Courses({ currentPlayerId, addToast }) {
     const { total, bonus, details, perfectPodium } = calculateRaceScore(pred.prediction, race.result)
     const pens = getMyPenalties(race.id)
     const penTotal = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
-    return { net: Math.max(0, total - penTotal), details, prediction: pred.prediction, penTotal, perfectPodium }
+    return { net: total - penTotal, details, prediction: pred.prediction, penTotal, perfectPodium }
   }
 
   const openRaceSheet = (race) => {
@@ -489,7 +489,7 @@ export default function Courses({ currentPlayerId, addToast }) {
                     )
                     const { total, details, perfectPodium } = calculateRaceScore(pred.prediction, currentRace.result)
                     const penTotal = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
-                    const net = Math.max(0, total - penTotal)
+                    const net = total - penTotal
                     return (
                       <div key={pid} className="card p-3">
                         <div className="flex items-center gap-2 mb-2">

@@ -303,7 +303,7 @@ export default function Stats({ currentPlayerId }) {
                   textAnchor="end"
                   interval={0}
                 />
-                <YAxis tick={{ fill: '#6B6B8A', fontSize: 10 }} />
+                <YAxis tick={{ fill: '#6B6B8A', fontSize: 10 }} domain={['auto', 'auto']} />
                 <Tooltip content={<CustomTooltip />} />
                 {PLAYERS_ORDER.map(pid => {
                   const player = playerStats.find(p => p.id === pid)
@@ -352,10 +352,13 @@ export default function Stats({ currentPlayerId }) {
 
       {/* Per-race scores bar chart — pure CSS, no Recharts */}
       {raceScoresChartData.length > 0 && (() => {
-        const BAR_H = 120 // px, max bar height
-        const maxVal = Math.max(1, ...raceScoresChartData.flatMap(entry =>
-          PLAYERS_ORDER.map(pid => entry[pid] ?? 0)
-        ))
+        const BAR_H = 120
+        const allVals = raceScoresChartData.flatMap(e => PLAYERS_ORDER.map(pid => e[pid] ?? 0))
+        const maxPos = Math.max(0, ...allVals)
+        const maxNeg = Math.abs(Math.min(0, ...allVals))
+        const totalRange = Math.max(1, maxPos + maxNeg)
+        const posZoneH = maxNeg > 0 ? Math.max(12, Math.round((maxPos / totalRange) * BAR_H)) : BAR_H
+        const negZoneH = BAR_H - posZoneH
         return (
           <div className="px-5 mb-6">
             <p className="section-title">Scores par course</p>
@@ -378,31 +381,51 @@ export default function Stats({ currentPlayerId }) {
               <div className="flex gap-3">
                 {raceScoresChartData.map(entry => (
                   <div key={entry.name} className="flex-1 min-w-0 flex flex-col items-center">
-                    {/* Bars */}
-                    <div className="flex items-end gap-0.5" style={{ height: BAR_H }}>
-                      {PLAYERS_ORDER.map(pid => {
-                        const player = playerStats.find(p => p.id === pid)
-                        const color = String(player?.color ?? PLAYER_COLORS[pid])
-                        const val = entry[pid] ?? 0
-                        const barH = val > 0 ? Math.max(3, Math.round((val / maxVal) * BAR_H)) : 0
-                        return (
-                          <div key={pid} className="flex flex-col items-center justify-end" style={{ height: BAR_H }}>
-                            {val > 0 && (
-                              <span className="text-[8px] font-black mb-0.5 leading-none" style={{ color }}>
-                                {val}
-                              </span>
-                            )}
-                            <div
-                              style={{
-                                width: 10,
-                                height: barH,
-                                backgroundColor: color,
-                                borderRadius: '2px 2px 0 0',
-                              }}
-                            />
-                          </div>
-                        )
-                      })}
+                    <div style={{ width: '100%', height: BAR_H }}>
+                      {/* Positive zone — bars grow upward */}
+                      <div className="flex items-end justify-center gap-0.5" style={{ height: posZoneH }}>
+                        {PLAYERS_ORDER.map(pid => {
+                          const player = playerStats.find(p => p.id === pid)
+                          const color = String(player?.color ?? PLAYER_COLORS[pid])
+                          const val = entry[pid] ?? 0
+                          const barH = val > 0 ? Math.max(2, Math.round((val / totalRange) * BAR_H)) : 0
+                          return (
+                            <div key={pid} className="flex flex-col items-center justify-end" style={{ height: posZoneH }}>
+                              {val > 0 && (
+                                <span className="text-[8px] font-black mb-0.5 leading-none" style={{ color }}>{val}</span>
+                              )}
+                              {val > 0 && (
+                                <div style={{ width: 10, height: barH, backgroundColor: color, borderRadius: '2px 2px 0 0' }} />
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {/* Zero line */}
+                      {negZoneH > 0 && (
+                        <div style={{ height: 1, backgroundColor: '#6B6B8A', opacity: 0.5 }} />
+                      )}
+                      {/* Negative zone — bars grow downward */}
+                      {negZoneH > 0 && (
+                        <div className="flex items-start justify-center gap-0.5" style={{ height: negZoneH - 1 }}>
+                          {PLAYERS_ORDER.map(pid => {
+                            const player = playerStats.find(p => p.id === pid)
+                            const color = String(player?.color ?? PLAYER_COLORS[pid])
+                            const val = entry[pid] ?? 0
+                            const barH = val < 0 ? Math.max(2, Math.round((Math.abs(val) / totalRange) * BAR_H)) : 0
+                            return (
+                              <div key={pid} className="flex flex-col items-center justify-start" style={{ height: negZoneH - 1 }}>
+                                {val < 0 && (
+                                  <div style={{ width: 10, height: barH, backgroundColor: color, opacity: 0.7, borderRadius: '0 0 2px 2px' }} />
+                                )}
+                                {val < 0 && (
+                                  <span className="text-[8px] font-black mt-0.5 leading-none" style={{ color }}>{val}</span>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                     {/* GP label */}
                     <p className="text-[9px] text-muted mt-1.5 text-center w-full truncate leading-tight">

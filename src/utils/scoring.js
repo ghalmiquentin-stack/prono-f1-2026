@@ -42,10 +42,10 @@ export function calculatePenalties(penalties) {
 }
 
 /**
- * Net score for a race (never below 0).
+ * Net score for a race (can be negative).
  */
 export function netScore(rawPlusBonus, penaltyTotal) {
-  return Math.max(0, rawPlusBonus - penaltyTotal)
+  return rawPlusBonus - penaltyTotal
 }
 
 /**
