@@ -8,7 +8,7 @@ export const RACES = [
   { id:  6, name: 'Miami',              flag: '🇺🇸', city: 'Miami',        circuit: 'Miami International',  date: '2026-05-03', raceTime: '19:00', raceTimeUTC: '17:00', status: 'upcoming', result: null },
   { id:  7, name: 'Canada',             flag: '🇨🇦', city: 'Montréal',     circuit: 'Gilles Villeneuve',    date: '2026-05-24', raceTime: '22:00', raceTimeUTC: '20:00', status: 'upcoming', result: null },
   { id:  8, name: 'Monaco',             flag: '🇲🇨', city: 'Monte-Carlo',  circuit: 'Circuit de Monaco',    date: '2026-06-07', raceTime: '15:00', raceTimeUTC: '13:00', status: 'upcoming', result: null },
-  { id:  9, name: 'Espagne',            flag: '🇪🇸', city: 'Barcelone',    circuit: 'Circuit de Barcelone', date: '2026-06-14', raceTime: '15:00', raceTimeUTC: '13:00', status: 'upcoming', result: null },
+  { id:  9, name: 'Barcelone-Catalunya', flag: '🇪🇸', city: 'Barcelone',    circuit: 'Circuit de Barcelone', date: '2026-06-14', raceTime: '15:00', raceTimeUTC: '13:00', status: 'upcoming', result: null },
   { id: 10, name: 'Autriche',           flag: '🇦🇹', city: 'Spielberg',    circuit: 'Red Bull Ring',        date: '2026-06-28', raceTime: '15:00', raceTimeUTC: '13:00', status: 'upcoming', result: null },
   { id: 11, name: 'Grande-Bretagne',    flag: '🇬🇧', city: 'Silverstone',  circuit: 'Silverstone',          date: '2026-07-05', raceTime: '16:00', raceTimeUTC: '14:00', status: 'upcoming', result: null },
   { id: 12, name: 'Belgique',           flag: '🇧🇪', city: 'Spa',          circuit: 'Spa-Francorchamps',    date: '2026-07-19', raceTime: '15:00', raceTimeUTC: '13:00', status: 'upcoming', result: null },
