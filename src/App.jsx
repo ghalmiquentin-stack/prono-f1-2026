@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react'
-import { usePlayer } from './hooks/usePlayer'
+import { useAuth } from './hooks/useAuth'
+import { useCollection } from './hooks/useFirestore'
 import BottomNav from './components/BottomNav'
 import { ToastContainer } from './components/Toast'
-import Onboarding from './screens/Onboarding'
+import Login from './screens/Login'
+import ClaimProfile from './screens/ClaimProfile'
 import Accueil from './screens/Accueil'
 import Courses from './screens/Courses'
 import Classement from './screens/Classement'
@@ -12,7 +14,8 @@ import Administration from './screens/Administration'
 let _toastId = 0
 
 export default function App() {
-  const { playerId, setPlayerId, logout } = usePlayer()
+  const { user, authLoading, logout } = useAuth()
+  const { data: players, loading: playersLoading } = useCollection('players')
   const [activeTab, setActiveTab] = useState('accueil')
   const [toasts, setToasts] = useState([])
 
@@ -25,14 +28,35 @@ export default function App() {
     setToasts(prev => prev.filter(t => t.id !== id))
   }, [])
 
-  if (!playerId) {
+  if (authLoading) {
+    return <div className="min-h-[100dvh] bg-bg" />
+  }
+
+  if (!user) {
     return (
       <>
         <ToastContainer toasts={toasts} removeToast={removeToast} />
-        <Onboarding onSelectPlayer={(id) => { setPlayerId(id); setActiveTab('accueil') }} />
+        <Login />
       </>
     )
   }
+
+  if (playersLoading) {
+    return <div className="min-h-[100dvh] bg-bg" />
+  }
+
+  const myProfile = players.find(p => p.authUid === user.uid)
+
+  if (!myProfile) {
+    return (
+      <>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+        <ClaimProfile user={user} />
+      </>
+    )
+  }
+
+  const playerId = myProfile.id
 
   const renderScreen = () => {
     switch (activeTab) {

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { LogOut } from 'lucide-react'
 import { useCollection, useDocument, upsertDoc, deleteDocument } from '../hooks/useFirestore'
 import { seedDatabase, clearDatabase } from '../data/seed'
 import { TEAMS } from '../data/drivers'
@@ -483,8 +484,15 @@ export default function Administration({ currentPlayerId, addToast, onChangePlay
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="pb-4">
-      <div className="px-5 pt-5 pb-4">
+      <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-black tracking-tight">Administration</h1>
+        <button
+          onClick={onChangePlayer}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-xs font-bold text-muted hover:text-white hover:border-muted transition-colors active:scale-95"
+        >
+          <LogOut size={18} className="text-current" />
+          Se déconnecter
+        </button>
       </div>
 
       {/* ── MON PROFIL (no auth required) ── */}
