@@ -1,0 +1,93 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return request.auth.token.admin == true;
+    }
+
+    function isLeagueAdmin(leagueId) {
+      return isSignedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/leagues/$(leagueId)).data.adminUids;
+    }
+
+    // ── leagues ──────────────────────────────────────────────────────────
+    match /leagues/{leagueId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.adminUids == [request.auth.uid];
+
+      allow update: if isSuperAdmin() || isLeagueAdmin(leagueId);
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── players ──────────────────────────────────────────────────────────
+    match /players/{playerId} {
+      allow read: if isSignedIn();
+
+      allow update: if isSuperAdmin()
+        || isLeagueAdmin(resource.data.leagueId)
+        || resource.data.authUid == request.auth.uid
+        || (
+          resource.data.authUid == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['authUid', 'updatedAt'])
+          && request.resource.data.authUid == request.auth.uid
+        );
+
+      allow create, delete: if isSuperAdmin() || isLeagueAdmin(request.resource.data.leagueId);
+    }
+
+    // ── predictions ──────────────────────────────────────────────────────
+    match /predictions/{predId} {
+      allow read: if isSignedIn();
+
+      allow create, update: if isSuperAdmin()
+        || isLeagueAdmin(resource.data.leagueId)
+        || get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.authUid == request.auth.uid;
+
+      allow delete: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
+    }
+
+    // ── penalties ────────────────────────────────────────────────────────
+    match /penalties/{penId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
+    }
+
+    // ── races, drivers, races_history, config ───────────────────────────────
+    // Données partagées entre toutes les ligues (pas propres à une ligue) :
+    // lecture libre, écriture réservée au super-admin uniquement.
+    match /races/{raceId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /drivers/{driverId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /races_history/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    // ── Interdit tout le reste par défaut ───────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
