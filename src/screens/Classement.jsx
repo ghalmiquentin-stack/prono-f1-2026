@@ -1,6 +1,9 @@
 import { useMemo } from 'react'
-import { useCollection } from '../hooks/useFirestore'
+import { useAuth } from '../hooks/useAuth'
+import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
+import { getProfile } from '../utils/profiles'
+import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import Skeleton from '../components/Skeleton'
 
 // Dense ranking: same points → same rank, no gap after ties
@@ -35,11 +38,14 @@ function contentHeight(playerCount) {
   return playerCount * ITEM_H + Math.max(0, playerCount - 1) * ITEM_GAP + STEP_PAD
 }
 
-export default function Classement({ currentPlayerId }) {
-  const { data: players, loading: playersLoading } = useCollection('players')
-  const { data: races, loading: racesLoading } = useCollection('races')
-  const { data: predictions } = useCollection('predictions')
-  const { data: penalties } = useCollection('penalties')
+export default function Classement({ currentPlayerId, activeLeagueName, activeLeagueId }) {
+  const { user } = useAuth()
+  const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
+  const { data: players, loading: playersLoading } = useCollection(user ? 'players' : null, leagueConstraint)
+  const { data: profiles } = useCollection(user ? 'profiles' : null)
+  const { data: races, loading: racesLoading } = useCollection(user ? 'races' : null)
+  const { data: predictions } = useCollection(user ? 'predictions' : null, leagueConstraint)
+  const { data: penalties } = useCollection(user ? 'penalties' : null, leagueConstraint)
 
   const loading = playersLoading || racesLoading
 
@@ -53,28 +59,29 @@ export default function Classement({ currentPlayerId }) {
     [sortedRaces]
   )
 
-  // Build standings — all display values from Firestore (no hardcoded fallback maps)
+  // Build standings — identity (color/avatar/displayName) resolved from profiles/{authUid}
   const standings = useMemo(() => {
     if (!players.length) return []
     const raw = calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
       .map(player => {
         const { total, raceScores, streakBonus } = player
+        const identity       = getProfile(profiles, player)
         const racesPlayed    = raceScores.filter(rs => rs.net !== null).length
         const avgScore       = racesPlayed > 0 ? (total / racesPlayed).toFixed(1) : '0.0'
         const perfectPodiums = raceScores.filter(rs => rs.perfectPodium).length
         const bestScore      = raceScores.reduce((best, rs) => Math.max(best, rs.net ?? 0), 0)
         return {
           ...player,
-          color:       String(player.color       ?? '#6B6B8A'),
-          avatar:      String(player.avatar      ?? '🏎️'),
-          displayName: String(player.displayName ?? player.id),
+          color:       String(identity?.color       ?? '#6B6B8A'),
+          avatar:      String(identity?.avatar      ?? '🏎️'),
+          displayName: String(identity?.displayName ?? player.id),
           total, raceScores, streakBonus,
           racesPlayed, avgScore, perfectPodiums, bestScore,
         }
       })
       .sort((a, b) => b.total - a.total)
     return rankWithTies(raw)
-  }, [players, races, predictions, penalties, sortedRaces])
+  }, [players, profiles, races, predictions, penalties, sortedRaces])
 
   // Podium groups (rank 1 / 2 / 3 only)
   const podiumGroups = useMemo(() => {
@@ -109,6 +116,11 @@ export default function Classement({ currentPlayerId }) {
   return (
     <div className="pb-4">
       <div className="px-5 pt-5 pb-4">
+        {activeLeagueName && (
+          <div className="mb-2">
+            <ActiveLeagueBadge name={activeLeagueName} />
+          </div>
+        )}
         <h1 className="text-2xl font-black tracking-tight mb-1">Classement</h1>
         <p className="text-sm text-muted">
           {completedRaces.length} course{completedRaces.length !== 1 ? 's' : ''} disputée{completedRaces.length !== 1 ? 's' : ''}
@@ -179,7 +191,7 @@ export default function Classement({ currentPlayerId }) {
           return (
             <div
               key={player.id}
-              className={`card p-4 transition-all ${isCurrent ? 'ring-2 ring-opacity-50' : ''}`}
+              className={`card p-4 transition-all ${isCurrent ? 'ring-2 ring-opacity-50' : ''} ${player.active === false ? 'opacity-60' : ''}`}
               style={isCurrent ? { '--tw-ring-color': player.color, borderColor: player.color + '30' } : {}}
             >
               {/* Row 1: rank badge + avatar + name + score */}
@@ -189,10 +201,17 @@ export default function Classement({ currentPlayerId }) {
                 </div>
                 <span className="text-xl leading-none">{player.avatar}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="font-black text-base truncate">
-                    {player.displayName}
-                    {isCurrent && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-black text-base truncate">
+                      {player.displayName}
+                      {isCurrent && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
+                    </p>
+                    {player.active === false && (
+                      <span className="text-[9px] font-bold uppercase tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full shrink-0">
+                        Parti
+                      </span>
+                    )}
+                  </div>
                   {gap > 0 ? (
                     <p className="text-xs text-muted">-{gap} pts du leader</p>
                   ) : (

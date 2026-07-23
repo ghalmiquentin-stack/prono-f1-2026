@@ -1,8 +1,12 @@
 import { useMemo } from 'react'
-import { useCollection } from '../hooks/useFirestore'
+import { useAuth } from '../hooks/useAuth'
+import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getTeamColor, getDriverTeam } from '../data/drivers'
+import { getProfile } from '../utils/profiles'
 import Countdown from '../components/Countdown'
+import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
+import PlayerBadge from '../components/PlayerBadge'
 import Skeleton, { SkeletonCard } from '../components/Skeleton'
 
 const PLAYERS_ORDER = ['william', 'quentin', 'alex', 'romain']
@@ -81,26 +85,33 @@ function formatPredTime(ts) {
   return `${datePart} à ${timeInTz('Europe/Paris')} 🇫🇷 / ${timeInTz('Asia/Dubai')} 🇦🇪`
 }
 
-export default function Accueil({ currentPlayerId, setActiveTab }) {
-  const { data: players, loading: playersLoading } = useCollection('players')
-  const { data: races, loading: racesLoading } = useCollection('races')
-  const { data: predictions } = useCollection('predictions')
-  const { data: penalties } = useCollection('penalties')
-  const { data: drivers } = useCollection('drivers')
+export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId }) {
+  const { user } = useAuth()
+  const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
+  const { data: players, loading: playersLoading } = useCollection(user ? 'players' : null, leagueConstraint)
+  const { data: profiles } = useCollection(user ? 'profiles' : null)
+  const { data: races, loading: racesLoading } = useCollection(user ? 'races' : null)
+  const { data: predictions } = useCollection(user ? 'predictions' : null, leagueConstraint)
+  const { data: penalties } = useCollection(user ? 'penalties' : null, leagueConstraint)
+  const { data: drivers } = useCollection(user ? 'drivers' : null)
 
   const loading = playersLoading || racesLoading
 
-  // Current player: direct Firestore lookup, with fallback to defaults
+  // Current player: direct Firestore lookup, identity resolved via profiles/{authUid}
   const currentPlayerData = useMemo(
     () => players.find(p => p.id === currentPlayerId),
     [players, currentPlayerId]
   )
+  const currentIdentity = useMemo(
+    () => getProfile(profiles, currentPlayerData),
+    [profiles, currentPlayerData]
+  )
   const playerDisplayName = String(
-    currentPlayerData?.displayName ??
+    currentIdentity?.displayName ??
     (currentPlayerId ? currentPlayerId.charAt(0).toUpperCase() + currentPlayerId.slice(1) : '—')
   )
-  const playerColor = String(currentPlayerData?.color ?? PLAYER_COLORS_FALLBACK[currentPlayerId] ?? '#6B6B8A')
-  const playerAvatar = String(currentPlayerData?.avatar ?? PLAYER_AVATARS_FALLBACK[currentPlayerId] ?? '🏎️')
+  const playerColor = String(currentIdentity?.color ?? PLAYER_COLORS_FALLBACK[currentPlayerId] ?? '#6B6B8A')
+  const playerAvatar = String(currentIdentity?.avatar ?? PLAYER_AVATARS_FALLBACK[currentPlayerId] ?? '🏎️')
 
   const sortedRaces = useMemo(() =>
     [...races].sort((a, b) => a.id - b.id),
@@ -160,42 +171,34 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
     return diff >= 0 && diff < 60 * 60 * 1000
   }, [raceUtcTime])
 
-  // Helper: get player data (color, avatar, displayName) from Firebase with fallbacks
+  // Helper: get player data (color, avatar, displayName) from profiles/{authUid} with fallbacks
   const getPlayerData = (pid) => {
     const fb = players.find(p => p.id === pid)
+    const identity = getProfile(profiles, fb)
     return {
-      color: String(fb?.color ?? PLAYER_COLORS_FALLBACK[pid] ?? '#6B6B8A'),
-      avatar: String(fb?.avatar ?? PLAYER_AVATARS_FALLBACK[pid] ?? '🏎️'),
-      displayName: String(fb?.displayName ?? (pid.charAt(0).toUpperCase() + pid.slice(1))),
+      color: String(identity?.color ?? PLAYER_COLORS_FALLBACK[pid] ?? '#6B6B8A'),
+      avatar: String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[pid] ?? '🏎️'),
+      displayName: String(identity?.displayName ?? (pid.charAt(0).toUpperCase() + pid.slice(1))),
     }
   }
 
   return (
     <div className="pb-4">
       {/* ── Header ── */}
-      <div className="px-5 pt-5 pb-4">
-        {/* Row 1: welcome line + player badge */}
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-muted font-medium">
-            Bienvenue <span className="text-white font-bold">{playerDisplayName}</span>
-          </p>
-          <div
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border"
-            style={{ borderColor: playerColor, backgroundColor: `${playerColor}18` }}
-          >
-            <span className="text-base leading-none">{playerAvatar}</span>
-            <div className="flex flex-col items-end leading-none">
-              <span className="text-xs font-black" style={{ color: playerColor }}>
-                {playerDisplayName}
-              </span>
-              <span className="text-[10px] text-muted font-bold mt-0.5">
-                {currentPlayerStanding?.total ?? 0} pts
-              </span>
-            </div>
-          </div>
+      <div className="px-5 pt-3 pb-4">
+        {/* Row 1: league badge + player badge */}
+        <div className="flex items-center justify-between gap-3 mb-1">
+          {activeLeagueName ? <ActiveLeagueBadge name={activeLeagueName} /> : <span />}
+          <PlayerBadge
+            avatar={playerAvatar}
+            color={playerColor}
+            displayName={playerDisplayName}
+            points={currentPlayerStanding?.total ?? 0}
+            onClick={() => setActiveTab('monprofil')}
+          />
         </div>
         {/* Row 2: main title */}
-        <h1 className="text-2xl font-black tracking-tight text-center">
+        <h1 className="text-2xl font-black tracking-tight">
           Prono F1 Saison 2026
         </h1>
       </div>
@@ -298,20 +301,26 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
             <div className="space-y-2">
               {standings.map(player => {
                 const isCurrent = player.id === currentPlayerId
-                const color = String(player.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
-                const avatar = String(player.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
+                const identity = getProfile(profiles, player)
+                const color = String(identity?.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
+                const avatar = String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
                 return (
                   <div
                     key={player.id}
-                    className={`flex items-center gap-3 p-2 rounded-lg ${isCurrent ? 'bg-surfaceHigh' : ''}`}
+                    className={`flex items-center gap-3 p-2 rounded-lg ${isCurrent ? 'bg-surfaceHigh' : ''} ${player.active === false ? 'opacity-60' : ''}`}
                   >
                     <span className="w-6 text-center text-base leading-none">
                       {rankEmoji(player.rank)}
                     </span>
                     <span className="text-xl leading-none">{avatar}</span>
-                    <span className={`flex-1 font-bold text-sm ${isCurrent ? 'text-white' : 'text-white/80'}`}>
-                      {String(player.displayName ?? player.id)}
+                    <span className={`flex-1 font-bold text-sm truncate ${isCurrent ? 'text-white' : 'text-white/80'}`}>
+                      {String(identity?.displayName ?? player.id)}
                       {isCurrent && <span className="text-xs text-muted ml-1">(vous)</span>}
+                      {player.active === false && (
+                        <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full">
+                          Parti
+                        </span>
+                      )}
                     </span>
                     <span className="font-black text-sm" style={{ color }}>
                       {player.total} pts
@@ -343,9 +352,10 @@ export default function Accueil({ currentPlayerId, setActiveTab }) {
               </div>
               <div className="space-y-3">
                 {standings.map(player => {
-                  const color = String(player.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
-                  const avatar = String(player.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
-                  const displayName = String(player.displayName ?? player.id)
+                  const identity = getProfile(profiles, player)
+                  const color = String(identity?.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
+                  const avatar = String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
+                  const displayName = String(identity?.displayName ?? player.id)
                   const pred = predictions.find(p => p.playerId === player.id && p.raceId === nextRace.id)
                   const pens = penalties.filter(p => p.playerId === player.id && p.raceId === nextRace.id)
                   const penTotal = pens.reduce((s, p) => {

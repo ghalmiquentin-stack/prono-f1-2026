@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react'
-import { useCollection } from '../hooks/useFirestore'
+import { useAuth } from '../hooks/useAuth'
+import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
+import { getProfile } from '../utils/profiles'
+import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
+import PlayerBadge from '../components/PlayerBadge'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
@@ -63,11 +67,14 @@ function CustomTooltip({ active, payload, label }) {
   return null
 }
 
-export default function Stats({ currentPlayerId }) {
-  const { data: players, loading: playersLoading } = useCollection('players')
-  const { data: races, loading: racesLoading } = useCollection('races')
-  const { data: predictions } = useCollection('predictions')
-  const { data: penalties } = useCollection('penalties')
+export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueId, setActiveTab }) {
+  const { user } = useAuth()
+  const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
+  const { data: players, loading: playersLoading } = useCollection(user ? 'players' : null, leagueConstraint)
+  const { data: profiles } = useCollection(user ? 'profiles' : null)
+  const { data: races, loading: racesLoading } = useCollection(user ? 'races' : null)
+  const { data: predictions } = useCollection(user ? 'predictions' : null, leagueConstraint)
+  const { data: penalties } = useCollection(user ? 'penalties' : null, leagueConstraint)
 
   const loading = playersLoading || racesLoading
 
@@ -80,6 +87,20 @@ export default function Stats({ currentPlayerId }) {
     sortedRaces.filter(r => r.status === 'completed'),
     [sortedRaces]
   )
+
+  const currentPlayerDoc = useMemo(
+    () => players.find(p => p.id === currentPlayerId),
+    [players, currentPlayerId]
+  )
+  const currentIdentity = useMemo(
+    () => getProfile(profiles, currentPlayerDoc),
+    [profiles, currentPlayerDoc]
+  )
+  const currentPlayerTotal = useMemo(() => {
+    if (!players.length) return 0
+    return calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
+      .find(p => p.id === currentPlayerId)?.total ?? 0
+  }, [players, sortedRaces, predictions, penalties, currentPlayerId])
 
   const playerStats = useMemo(() => {
     if (!players.length) return []
@@ -106,14 +127,19 @@ export default function Stats({ currentPlayerId }) {
         return { raceId: rs.raceId, name: rs.raceName, cumulative }
       })
 
+      const identity = getProfile(profiles, scored)
+
       return {
         ...scored,
+        color: identity?.color,
+        avatar: identity?.avatar,
+        displayName: identity?.displayName,
         total, raceScores, streakBonus,
         racesPlayed, avgScore, perfectPodiums, bestScore,
         totalPenalties, exactHits, podiumHits, cumulativeScores,
       }
     }).filter(Boolean)
-  }, [players, races, predictions, penalties, sortedRaces])
+  }, [players, profiles, races, predictions, penalties, sortedRaces])
 
   // Cumulative chart data — real Y values + horizontal pixel offsets for ties
   const cumulativeChartData = useMemo(() => {
@@ -230,6 +256,16 @@ export default function Stats({ currentPlayerId }) {
   return (
     <div className="pb-4">
       <div className="px-5 pt-5 pb-4">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          {activeLeagueName ? <ActiveLeagueBadge name={activeLeagueName} /> : <span />}
+          <PlayerBadge
+            avatar={String(currentIdentity?.avatar ?? '🏎️')}
+            color={String(currentIdentity?.color ?? '#6B6B8A')}
+            displayName={String(currentIdentity?.displayName ?? currentPlayerId)}
+            points={currentPlayerTotal}
+            onClick={() => setActiveTab?.('monprofil')}
+          />
+        </div>
         <h1 className="text-2xl font-black tracking-tight">Statistiques</h1>
         <p className="text-sm text-muted">{completedRaces.length} course{completedRaces.length > 1 ? 's' : ''} analysée{completedRaces.length > 1 ? 's' : ''}</p>
       </div>
@@ -245,12 +281,17 @@ export default function Stats({ currentPlayerId }) {
             return (
               <div
                 key={player.id}
-                className={`card p-4 ${isCurrent ? 'ring-1' : ''}`}
+                className={`card p-4 ${isCurrent ? 'ring-1' : ''} ${player.active === false ? 'opacity-60' : ''}`}
                 style={isCurrent ? { '--tw-ring-color': color, borderColor: color + '30' } : {}}
               >
                 <div className="flex items-center gap-2 mb-3">
                   <span>{avatar}</span>
-                  <span className="font-black text-sm flex-1">{player.displayName}</span>
+                  <span className="font-black text-sm flex-1 truncate">{player.displayName}</span>
+                  {player.active === false && (
+                    <span className="text-[9px] font-bold uppercase tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full shrink-0">
+                      Parti
+                    </span>
+                  )}
                   {idx === 0 && <span className="text-xs">👑</span>}
                 </div>
                 <p className="font-black text-2xl" style={{ color }}>{player.total}</p>

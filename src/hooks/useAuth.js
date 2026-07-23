@@ -20,6 +20,7 @@ const ERROR_MESSAGES = {
   'auth/popup-closed-by-user': 'Fenêtre de connexion fermée avant la fin.',
   'auth/cancelled-popup-request': 'Connexion annulée.',
   'auth/network-request-failed': 'Problème de connexion réseau.',
+  'auth/requires-recent-login': 'Cette action nécessite une reconnexion récente. Déconnectez-vous puis reconnectez-vous et réessayez.',
 }
 
 /** Translate a Firebase Auth error into a clear French message */

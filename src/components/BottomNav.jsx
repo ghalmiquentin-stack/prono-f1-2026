@@ -1,3 +1,5 @@
+import { Trophy } from 'lucide-react'
+
 const TABS = [
   {
     id: 'accueil',
@@ -36,22 +38,19 @@ const TABS = [
     ),
   },
   {
-    id: 'admin',
-    label: 'Admin',
-    icon: () => (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
+    id: 'leagues',
+    label: 'Mes ligues',
+    icon: () => <Trophy className="w-6 h-6" strokeWidth={1.8} />,
   },
 ]
 
-export default function BottomNav({ activeTab, setActiveTab }) {
+export default function BottomNav({ activeTab, setActiveTab, hasLeague = true }) {
+  const visibleTabs = hasLeague ? TABS : TABS.filter(tab => tab.id === 'leagues')
+
   return (
     <nav className="z-50 bg-surface/95 backdrop-blur-md border-t border-border" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, paddingTop: '6px', paddingLeft: '4px', paddingRight: '4px', paddingBottom: '8px' }}>
       <div className="flex items-center h-14">
-        {TABS.map(tab => {
+        {visibleTabs.map(tab => {
           const active = activeTab === tab.id
           return (
             <button

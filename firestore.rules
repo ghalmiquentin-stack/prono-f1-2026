@@ -26,6 +26,16 @@ service cloud.firestore {
 
       allow update: if isSuperAdmin() || isLeagueAdmin(leagueId);
 
+      allow delete: if isSuperAdmin() || isLeagueAdmin(leagueId);
+    }
+
+    // ── profiles ─────────────────────────────────────────────────────────
+    // Identité de l'utilisateur (id = authUid), distincte de l'appartenance
+    // à une ligue (players). Chacun ne peut créer/modifier que son propre
+    // profil ; suppression réservée au super-admin.
+    match /profiles/{profileId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.auth.uid == profileId;
       allow delete: if isSuperAdmin();
     }
 
@@ -42,24 +52,38 @@ service cloud.firestore {
           && request.resource.data.authUid == request.auth.uid
         );
 
-      allow create, delete: if isSuperAdmin() || isLeagueAdmin(request.resource.data.leagueId);
+      allow create: if isSuperAdmin()
+        || isLeagueAdmin(request.resource.data.leagueId)
+        || request.resource.data.authUid == request.auth.uid;
+
+      // Uses resource.data (the existing document), not request.resource —
+      // request.resource is undefined on delete.
+      allow delete: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
     }
 
     // ── predictions ──────────────────────────────────────────────────────
     match /predictions/{predId} {
       allow read: if isSignedIn();
 
-      allow create, update: if isSuperAdmin()
+      // create uses request.resource (the document doesn't exist yet, so
+      // resource.data would be undefined); update/delete use resource (the
+      // existing document), since request.resource is undefined on delete.
+      allow create: if isSuperAdmin()
+        || isLeagueAdmin(request.resource.data.leagueId)
+        || get(/databases/$(database)/documents/players/$(request.resource.data.playerId)).data.authUid == request.auth.uid;
+
+      allow update, delete: if isSuperAdmin()
         || isLeagueAdmin(resource.data.leagueId)
         || get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.authUid == request.auth.uid;
-
-      allow delete: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
     }
 
     // ── penalties ────────────────────────────────────────────────────────
     match /penalties/{penId} {
       allow read: if isSignedIn();
-      allow write: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
+
+      allow create: if isSuperAdmin() || isLeagueAdmin(request.resource.data.leagueId);
+
+      allow update, delete: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
     }
 
     // ── races, drivers, races_history, config ───────────────────────────────

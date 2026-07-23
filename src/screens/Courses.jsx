@@ -1,10 +1,14 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { useCollection, useDocument, upsertDoc } from '../hooks/useFirestore'
-import { calculateRaceScore } from '../utils/scoring'
+import { useAuth } from '../hooks/useAuth'
+import { useCollection, useDocument, upsertDoc, where } from '../hooks/useFirestore'
+import { calculateRaceScore, calculateAllSeasonScores } from '../utils/scoring'
+import { getProfile } from '../utils/profiles'
 import BottomSheet from '../components/BottomSheet'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
 import Skeleton from '../components/Skeleton'
 import Countdown from '../components/Countdown'
+import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
+import PlayerBadge from '../components/PlayerBadge'
 
 function getDriverPhoto(drivers, displayName) {
   if (!displayName || !drivers?.length) return null
@@ -52,12 +56,15 @@ function detailIcon(detail) {
   return '❌'
 }
 
-export default function Courses({ currentPlayerId, addToast }) {
-  const { data: races, loading: racesLoading } = useCollection('races')
-  const { data: predictions, loading: predsLoading } = useCollection('predictions')
-  const { data: penalties } = useCollection('penalties')
-  const { data: players } = useCollection('players')
-  const { data: firestoreDrivers } = useCollection('drivers')
+export default function Courses({ currentPlayerId, addToast, activeLeagueName, activeLeagueId, setActiveTab: setAppTab }) {
+  const { user } = useAuth()
+  const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
+  const { data: races, loading: racesLoading } = useCollection(user ? 'races' : null)
+  const { data: predictions, loading: predsLoading } = useCollection(user ? 'predictions' : null, leagueConstraint)
+  const { data: penalties } = useCollection(user ? 'penalties' : null, leagueConstraint)
+  const { data: players } = useCollection(user ? 'players' : null, leagueConstraint)
+  const { data: profiles } = useCollection(user ? 'profiles' : null)
+  const { data: firestoreDrivers } = useCollection(user ? 'drivers' : null)
 
   const [selectedRace, setSelectedRace] = useState(null)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -79,7 +86,7 @@ export default function Courses({ currentPlayerId, addToast }) {
 
   // History document for the selected race
   const { data: raceHistory } = useDocument(
-    'races_history',
+    user ? 'races_history' : null,
     selectedRace ? String(selectedRace.id) : ''
   )
 
@@ -252,12 +259,32 @@ export default function Courses({ currentPlayerId, addToast }) {
     }
   }
 
-  const playerColor = PLAYER_COLORS[currentPlayerId] ?? '#fff'
+  const currentPlayerDoc = players.find(p => p.id === currentPlayerId)
+  const currentIdentity = getProfile(profiles, currentPlayerDoc)
+  const playerColor = currentIdentity?.color ?? PLAYER_COLORS[currentPlayerId] ?? '#fff'
+  const playerAvatar = currentIdentity?.avatar ?? PLAYER_AVATARS[currentPlayerId] ?? '🏎️'
+  const playerDisplayName = currentIdentity?.displayName ?? currentPlayerId
+
+  const currentPlayerTotal = useMemo(() => {
+    if (!players.length) return 0
+    return calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
+      .find(p => p.id === currentPlayerId)?.total ?? 0
+  }, [players, sortedRaces, predictions, penalties, currentPlayerId])
 
   return (
     <div className="pb-4">
       {/* Header */}
       <div className="px-5 pt-5 pb-3">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          {activeLeagueName ? <ActiveLeagueBadge name={activeLeagueName} /> : <span />}
+          <PlayerBadge
+            avatar={playerAvatar}
+            color={playerColor}
+            displayName={playerDisplayName}
+            points={currentPlayerTotal}
+            onClick={() => setAppTab?.('monprofil')}
+          />
+        </div>
         <h1 className="text-2xl font-black tracking-tight mb-4">Courses 2026</h1>
         <div className="flex gap-2 bg-surfaceHigh rounded-xl p-1">
           {[
@@ -475,9 +502,10 @@ export default function Courses({ currentPlayerId, addToast }) {
                   <p className="section-title">Pronostics des joueurs</p>
                   {(['william', 'quentin', 'alex', 'romain']).map(pid => {
                     const playerData = players.find(p => p.id === pid)
-                    const pidColor  = String(playerData?.color  ?? PLAYER_COLORS[pid]  ?? '#fff')
-                    const pidAvatar = String(playerData?.avatar ?? PLAYER_AVATARS[pid] ?? '🏎️')
-                    const pidName   = String(playerData?.displayName ?? pid)
+                    const identity = getProfile(profiles, playerData)
+                    const pidColor  = String(identity?.color  ?? PLAYER_COLORS[pid]  ?? '#fff')
+                    const pidAvatar = String(identity?.avatar ?? PLAYER_AVATARS[pid] ?? '🏎️')
+                    const pidName   = String(identity?.displayName ?? pid)
                     const pred = predictions.find(p => p.playerId === pid && p.raceId === currentRace.id)
                     const pens = penalties.filter(p => p.playerId === pid && p.raceId === currentRace.id)
                     if (!pred) return (
