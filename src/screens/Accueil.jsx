@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react'
+import { Pencil, Clock } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { useCollection, where } from '../hooks/useFirestore'
+import { useCollection, useDocument, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getTeamColor, getDriverTeam } from '../data/drivers'
 import { getProfile } from '../utils/profiles'
+import { hasRaceStarted } from '../utils/races'
+import { getModificationCount } from '../utils/predictions'
+import { getPenaltyAmount } from '../utils/penalties'
 import Countdown from '../components/Countdown'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import PlayerBadge from '../components/PlayerBadge'
@@ -96,6 +100,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
   const { data: predictions } = useCollection(user ? 'predictions' : null, leagueConstraint)
   const { data: penalties } = useCollection(user ? 'penalties' : null, leagueConstraint)
   const { data: drivers } = useCollection(user ? 'drivers' : null)
+  const { data: activeLeague } = useDocument(user ? 'leagues' : null, activeLeagueId)
 
   const loading = playersLoading || racesLoading
 
@@ -172,6 +177,107 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
     const diff = new Date(raceUtcTime).getTime() - Date.now()
     return diff >= 0 && diff < 60 * 60 * 1000
   }, [raceUtcTime])
+
+  // "Hide predictions before race" league rule — lifts automatically once
+  // the GP has actually started, same trigger as the countdown/auto-lock.
+  const hidePredictionsActive = !!activeLeague?.rules?.hidePredictionsBeforeRace?.enabled
+    && !!nextRace && !hasRaceStarted(nextRace)
+
+  // Full prediction card for one player — unchanged from before; only used
+  // as-is when hiding is off, or for the current player's own card.
+  const renderPredictionCard = (player, { mine = false } = {}) => {
+    const identity = getProfile(profiles, player)
+    const color = String(identity?.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
+    const avatar = String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
+    const displayName = String(identity?.displayName ?? player.id)
+    const pred = predictions.find(p => p.playerId === player.id && p.raceId === nextRace.id)
+    const modCount = getModificationCount(pred)
+    // Edit button: only ever for the current player's own card, and only
+    // while the race hasn't started — unless the admin granted an
+    // exceptional manual unlock for this specific prediction.
+    const canEdit = mine && (!hasRaceStarted(nextRace) || pred?.manualUnlockOverride === true)
+
+    if (!pred) return (
+      <div key={player.id} className="card p-3 flex items-center gap-3">
+        <span className="text-xl leading-none">{avatar}</span>
+        <span className="font-bold text-sm flex-1" style={{ color }}>
+          {displayName}
+          {mine && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
+        </span>
+        <span className="text-xs text-muted">⏳ En attente de prono...</span>
+      </div>
+    )
+
+    // Real count/sum of currently-existing "change" penalties for this
+    // prediction — not modificationCount or a theoretical count × configured
+    // amount, so an admin deletion is reflected immediately and the
+    // displayed count stays consistent with the displayed points.
+    const changePenalties = penalties.filter(
+      p => p.playerId === player.id && p.raceId === nextRace.id && p.type === 'change'
+    )
+    const realModCount = changePenalties.length
+    const modPenaltyTotal = changePenalties.reduce((sum, p) => sum + getPenaltyAmount(p), 0)
+
+    return (
+      <div key={player.id} className="card p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xl leading-none">{avatar}</span>
+          <span className="font-bold text-sm flex-1" style={{ color }}>
+            {displayName}
+            {mine && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
+          </span>
+          {realModCount > 0 && (
+            <span className="text-xs text-red-400 font-bold">
+              {realModCount} modif.{modPenaltyTotal > 0 ? ` · -${modPenaltyTotal} pts` : ''}
+            </span>
+          )}
+          {canEdit && (
+            <button
+              onClick={() => setPredictionSheetOpen(true)}
+              className="p-1 rounded-lg text-muted hover:text-white transition-colors"
+              aria-label="Modifier mon pronostic"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {POSITIONS.map(pos => {
+            const driverName = pred.prediction?.[pos]
+            const photoUrl   = getDriverPhoto(drivers, driverName)
+            const teamColor  = getTeamColor(driverName)
+            const isModified = modCount > 0 && pred.prediction?.[pos] !== pred.initialPrediction?.[pos]
+            return (
+              <div key={pos} className="rounded-lg overflow-hidden border border-border bg-surfaceHigh/50">
+                <div className="h-1" style={{ backgroundColor: teamColor ?? '#6B6B8A' }} />
+                <div className="p-2 flex flex-col items-center gap-1">
+                  <div className={`text-[9px] font-bold ${POS_COLOR[pos]}`}>{pos}</div>
+                  <div className="w-9 h-9 rounded-full overflow-hidden bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted shrink-0">
+                    {photoUrl
+                      ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                      : <span>{driverName?.[0] ?? '?'}</span>
+                    }
+                  </div>
+                  <div className="text-[10px] font-bold truncate w-full text-center leading-tight">{driverName}</div>
+                  {isModified && (
+                    <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{ color: '#E8002D', backgroundColor: '#E8002D22' }}>Modifié</span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {pred.submittedAt && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1 text-xs text-muted">
+              <Clock size={12} />
+              Soumis le {formatPredTime(pred.submittedAt)}
+            </span>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   // Helper: get player data (color, avatar, displayName) from profiles/{authUid} with fallbacks
   const getPlayerData = (pid) => {
@@ -353,75 +459,28 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                 )}
               </div>
               <div className="space-y-3">
-                {standings.map(player => {
+                {(() => {
+                  const me = standings.find(p => p.id === currentPlayerId)
+                  return me ? renderPredictionCard(me, { mine: true }) : null
+                })()}
+                <div className="pt-2 mt-1 border-t border-border">
+                  <p className="text-[10px] text-muted uppercase tracking-wide font-bold mb-2">Les autres joueurs</p>
+                </div>
+                {standings.filter(p => p.id !== currentPlayerId).map(player => {
+                  if (!hidePredictionsActive) return renderPredictionCard(player)
+
                   const identity = getProfile(profiles, player)
-                  const color = String(identity?.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
                   const avatar = String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
                   const displayName = String(identity?.displayName ?? player.id)
-                  const pred = predictions.find(p => p.playerId === player.id && p.raceId === nextRace.id)
-                  const pens = penalties.filter(p => p.playerId === player.id && p.raceId === nextRace.id)
-                  const penTotal = pens.reduce((s, p) => {
-                    if (p.type === 'late') return s + 10
-                    if (p.type === 'change' && pred?.hasChanged) return s + 5
-                    return s
-                  }, 0)
-
-                  if (!pred) return (
+                  const hasSubmitted = predictions.some(p => p.playerId === player.id && p.raceId === nextRace.id)
+                  return (
                     <div key={player.id} className="card p-3 flex items-center gap-3">
                       <span className="text-xl leading-none">{avatar}</span>
-                      <span className="font-bold text-sm flex-1" style={{ color }}>{displayName}</span>
-                      <span className="text-xs text-muted">⏳ En attente de prono...</span>
-                    </div>
-                  )
-
-                  return (
-                    <div key={player.id} className="card p-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xl leading-none">{avatar}</span>
-                        <span className="font-bold text-sm flex-1" style={{ color }}>{displayName}</span>
-                        {penTotal > 0 && (
-                          <span className="text-xs text-red-400 font-bold">-{penTotal} pén.</span>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {POSITIONS.map(pos => {
-                          const driverName = pred.prediction?.[pos]
-                          const photoUrl   = getDriverPhoto(drivers, driverName)
-                          const teamColor  = getTeamColor(driverName)
-                          const isModified = pred.hasChanged && pred.prediction?.[pos] !== pred.initialPrediction?.[pos]
-                          return (
-                            <div key={pos} className="rounded-lg overflow-hidden border border-border bg-surfaceHigh/50">
-                              <div className="h-1" style={{ backgroundColor: teamColor ?? '#6B6B8A' }} />
-                              <div className="p-2 flex flex-col items-center gap-1">
-                                <div className={`text-[9px] font-bold ${POS_COLOR[pos]}`}>{pos}</div>
-                                <div className="w-9 h-9 rounded-full overflow-hidden bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted shrink-0">
-                                  {photoUrl
-                                    ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                                    : <span>{driverName?.[0] ?? '?'}</span>
-                                  }
-                                </div>
-                                <div className="text-[10px] font-bold truncate w-full text-center leading-tight">{driverName}</div>
-                                {isModified && (
-                                  <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{ color: '#E8002D', backgroundColor: '#E8002D22' }}>Modifié</span>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                      {pred.submittedAt && (
-                        <div className="mt-2 space-y-0.5">
-                          <p className="text-xs text-muted italic">
-                            Soumis le {formatPredTime(pred.submittedAt)}
-                          </p>
-                          {pred.hasChanged && pred.modifiedAt &&
-                           (pred.modifiedAt?.toDate?.() ?? new Date(pred.modifiedAt)).getTime() !==
-                           (pred.submittedAt?.toDate?.() ?? new Date(pred.submittedAt)).getTime() && (
-                            <p className="text-xs text-muted italic">
-                              Modifié le {formatPredTime(pred.modifiedAt)}
-                            </p>
-                          )}
-                        </div>
+                      <span className="font-bold text-sm flex-1">{displayName}</span>
+                      {hasSubmitted ? (
+                        <span className="text-xs text-green-400 font-bold">🔒 Verrouillé</span>
+                      ) : (
+                        <span className="text-xs text-muted font-bold">⏳ En attente</span>
                       )}
                     </div>
                   )

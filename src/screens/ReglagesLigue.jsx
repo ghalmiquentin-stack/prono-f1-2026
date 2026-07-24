@@ -1,14 +1,23 @@
 import { useState, useEffect, useMemo } from 'react'
-import { LogOut, Trash2, Copy, Check } from 'lucide-react'
+import { LogOut, Trash2, Copy, Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, useDocument, where, upsertDoc, deleteDocument } from '../hooks/useFirestore'
 import { getProfile } from '../utils/profiles'
 import { parseAmount } from '../utils/leagues'
+import { hasRaceStarted } from '../utils/races'
+import { getPenaltyAmount } from '../utils/penalties'
 import LeagueRulesFields from '../components/LeagueRulesFields'
 import BottomSheet from '../components/BottomSheet'
 import LeaveLeagueSheet from '../components/LeaveLeagueSheet'
 import DeleteLeagueSheet from '../components/DeleteLeagueSheet'
+import ConfirmModal from '../components/ConfirmModal'
 import Skeleton from '../components/Skeleton'
+
+function formatSubmittedDate(ts) {
+  if (!ts) return '—'
+  const date = ts?.toDate?.() ?? new Date(ts)
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
 
 export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague, onClearActiveLeague, setActiveTab, addToast }) {
   const { user } = useAuth()
@@ -116,11 +125,20 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
   const [penaltyRaceId, setPenaltyRaceId] = useState(null)
   const [penaltyPlayerId, setPenaltyPlayerId] = useState(null)
   const [penaltyType, setPenaltyType] = useState('late')
+  const [expandedPenaltyPlayer, setExpandedPenaltyPlayer] = useState(null) // player.id
 
-  const lockPrediction = async (pred) => {
+  // Exceptional manual override — lets a player edit their prediction again
+  // even after the race has started (see PredictionSheet's pencil button on
+  // Accueil). Default is off; the admin turns it on per-prediction here.
+  const toggleManualUnlock = async (pred) => {
     try {
-      await upsertDoc('predictions', pred._id, { ...pred, locked: !pred.locked })
-      addToast?.(`Pronostic ${pred.locked ? 'déverrouillé' : 'verrouillé'}`, 'info')
+      await upsertDoc('predictions', pred._id, { ...pred, manualUnlockOverride: !pred.manualUnlockOverride })
+      addToast?.(
+        pred.manualUnlockOverride
+          ? 'Déverrouillage exceptionnel désactivé'
+          : 'Déverrouillage exceptionnel activé — modification possible même après le départ',
+        'info'
+      )
     } catch {
       addToast?.('Erreur', 'error')
     }
@@ -129,8 +147,13 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
   const addPenalty = async () => {
     if (!penaltyRaceId || !penaltyPlayerId) return
     const id = `pen_${penaltyType}_${penaltyPlayerId}_${penaltyRaceId}_${Date.now()}`
+    // Snapshot the currently configured amount so the penalty's own points
+    // stay fixed even if the league's rule amount changes later.
+    const amount = penaltyType === 'late'
+      ? (league?.rules?.postQualifsPenalty?.amount ?? 10)
+      : (league?.rules?.modificationPenalty?.amount ?? 5)
     try {
-      await upsertDoc('penalties', id, { playerId: penaltyPlayerId, raceId: penaltyRaceId, type: penaltyType, leagueId })
+      await upsertDoc('penalties', id, { playerId: penaltyPlayerId, raceId: penaltyRaceId, type: penaltyType, leagueId, amount })
       addToast?.('Pénalité ajoutée', 'warning')
       setPenaltySheetOpen(false)
       setPenaltyRaceId(null)
@@ -140,13 +163,17 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
     }
   }
 
-  const removePenalty = async (penId) => {
-    if (!confirm('Supprimer cette pénalité ?')) return
+  const [deletePenaltyTarget, setDeletePenaltyTarget] = useState(null) // penId
+
+  const confirmRemovePenalty = async () => {
+    if (!deletePenaltyTarget) return
     try {
-      await deleteDocument('penalties', penId)
+      await deleteDocument('penalties', deletePenaltyTarget)
       addToast?.('Pénalité supprimée', 'info')
     } catch {
       addToast?.('Erreur', 'error')
+    } finally {
+      setDeletePenaltyTarget(null)
     }
   }
 
@@ -361,6 +388,9 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                 .map(race => {
                   const racePreds = predictions.filter(p => p.raceId === race.id)
                   if (!racePreds.length) return null
+                  // Same league rule as Accueil — lifts automatically once
+                  // the GP has actually started, no admin exemption.
+                  const hideActive = !!league?.rules?.hidePredictionsBeforeRace?.enabled && !hasRaceStarted(race)
                   return (
                     <div key={race.id} className="card p-4">
                       <div className="flex items-center gap-2 mb-3">
@@ -392,16 +422,26 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                               <span className="text-xs font-bold flex-1" style={{ color }}>
                                 {identity?.displayName ?? player.id}
                               </span>
-                              <span className="text-xs text-muted">
-                                {pred.prediction?.P1} · {pred.prediction?.P2} · {pred.prediction?.P3}
-                              </span>
+                              {hideActive ? (
+                                <span className="text-xs text-muted text-right">
+                                  Soumis {formatSubmittedDate(pred.submittedAt)} ·{' '}
+                                  {penalties.filter(p => p.playerId === player.id && p.raceId === race.id && p.type === 'change').length} modif.
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted">
+                                  {pred.prediction?.P1} · {pred.prediction?.P2} · {pred.prediction?.P3}
+                                </span>
+                              )}
                               <button
-                                onClick={() => lockPrediction(pred)}
+                                onClick={() => toggleManualUnlock(pred)}
+                                title={pred.manualUnlockOverride
+                                  ? 'Déverrouillage exceptionnel actif — cliquer pour revenir au verrouillage normal'
+                                  : 'Verrouillage normal — cliquer pour activer le déverrouillage exceptionnel'}
                                 className={`text-xs px-2 py-1 rounded font-bold ml-1 ${
-                                  pred.locked ? 'bg-accent/20 text-accent' : 'bg-green-500/20 text-green-400'
+                                  pred.manualUnlockOverride ? 'bg-green-500/20 text-green-400' : 'bg-surfaceHigh text-muted'
                                 }`}
                               >
-                                {pred.locked ? '🔒' : '🔓'}
+                                {pred.manualUnlockOverride ? '🔓' : '🔒'}
                               </button>
                             </div>
                           )
@@ -421,36 +461,71 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
               >
                 + Ajouter une pénalité
               </button>
-              {penalties.length === 0 ? (
+              {players.length === 0 ? (
                 <div className="text-center py-10 text-muted">
                   <span className="text-4xl block mb-3">✅</span>
                   <p className="font-bold">Aucune pénalité</p>
                 </div>
               ) : (
-                penalties.map(pen => {
-                  const race = races.find(r => r.id === pen.raceId)
-                  const player = players.find(p => p.id === pen.playerId)
+                players.map(player => {
                   const identity = getProfile(profiles, player)
+                  const avatar = String(identity?.avatar ?? '🏎️')
+                  const displayName = String(identity?.displayName ?? player.id)
+                  const playerPenalties = penalties.filter(p => p.playerId === player.id)
+                  const count = playerPenalties.length
+                  const total = playerPenalties.reduce((sum, p) => sum + getPenaltyAmount(p), 0)
+                  const hasPenalties = count > 0
+                  const isExpanded = expandedPenaltyPlayer === player.id
+
                   return (
-                    <div key={pen._id} className="card p-3 flex items-center gap-3">
-                      <span>{String(identity?.avatar ?? '🏎️')}</span>
-                      <div className="flex-1">
-                        <p className="font-bold text-sm">{identity?.displayName ?? pen.playerId}</p>
-                        <p className="text-xs text-muted">
-                          GP {race?.name ?? pen.raceId} · {pen.type === 'late' ? 'Tardif' : 'Modification'}
-                        </p>
-                      </div>
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                        pen.type === 'late' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'
-                      }`}>
-                        -{pen.type === 'late' ? 10 : 5}
-                      </span>
+                    <div key={player.id} className="card overflow-hidden">
                       <button
-                        onClick={() => removePenalty(pen._id)}
-                        className="text-muted text-sm p-1 hover:text-white transition-colors"
+                        onClick={() => hasPenalties && setExpandedPenaltyPlayer(isExpanded ? null : player.id)}
+                        disabled={!hasPenalties}
+                        className={`w-full flex items-center gap-3 p-3 text-left transition-colors ${
+                          hasPenalties ? 'hover:bg-surfaceHigh/50' : 'opacity-50 cursor-default'
+                        }`}
                       >
-                        🗑️
+                        <span>{avatar}</span>
+                        <div className="flex-1">
+                          <p className="font-bold text-sm">{displayName}</p>
+                          <p className="text-xs text-muted">
+                            {count} pénalité{count > 1 ? 's' : ''} · {total > 0 ? `-${total}` : '0'} pt{total > 1 ? 's' : ''}
+                          </p>
+                        </div>
+                        {hasPenalties && (
+                          <ChevronDown
+                            size={16}
+                            className={`text-muted shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                          />
+                        )}
                       </button>
+
+                      {isExpanded && hasPenalties && (
+                        <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border">
+                          {playerPenalties.map(pen => {
+                            const race = races.find(r => r.id === pen.raceId)
+                            return (
+                              <div key={pen._id} className="flex items-center gap-3 pt-2">
+                                <p className="text-xs text-muted flex-1">
+                                  GP {race?.name ?? pen.raceId} · {pen.type === 'late' ? 'Tardif' : 'Modification'}
+                                </p>
+                                <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                                  pen.type === 'late' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'
+                                }`}>
+                                  -{getPenaltyAmount(pen)}
+                                </span>
+                                <button
+                                  onClick={() => setDeletePenaltyTarget(pen._id)}
+                                  className="text-muted text-sm p-1 hover:text-white transition-colors"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )
                 })
@@ -546,6 +621,16 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
         league={league}
         onDeleted={handleLeagueDeleted}
         addToast={addToast}
+      />
+
+      <ConfirmModal
+        isOpen={!!deletePenaltyTarget}
+        title="Supprimer cette pénalité ?"
+        message="Cette pénalité sera définitivement supprimée."
+        confirmLabel="Supprimer"
+        danger
+        onConfirm={confirmRemovePenalty}
+        onCancel={() => setDeletePenaltyTarget(null)}
       />
 
       <BottomSheet

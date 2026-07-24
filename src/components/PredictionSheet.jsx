@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useDocument, upsertDoc } from '../hooks/useFirestore'
 import { calculateRaceScore } from '../utils/scoring'
 import { getProfile } from '../utils/profiles'
+import { getModificationCount } from '../utils/predictions'
+import { getPenaltyAmount } from '../utils/penalties'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
 import BottomSheet from './BottomSheet'
 import Countdown from './Countdown'
@@ -59,6 +61,12 @@ export default function PredictionSheet({
   const [qualLoading, setQualLoading] = useState(false)
   const [qualError, setQualError] = useState(null)
   const [qualRefreshing, setQualRefreshing] = useState(false)
+
+  // League rules — read here (not passed down) so the modal stays correct
+  // regardless of which screen opens it.
+  const { data: league } = useDocument(activeLeagueId ? 'leagues' : null, activeLeagueId)
+  const modPenaltyEnabled = !!league?.rules?.modificationPenalty?.enabled
+  const modPenaltyAmount = league?.rules?.modificationPenalty?.amount ?? 0
 
   // Reactive view of the selected race (stays fresh after Firebase writes)
   const currentRace = useMemo(
@@ -163,6 +171,14 @@ export default function PredictionSheet({
     try {
       const existing = getMyPrediction(race.id)
 
+      // No-op save: final podium is identical to what was already stored —
+      // don't write anything (no prediction doc churn, no penalty), and
+      // leave the sheet open since nothing actually changed.
+      if (existing && POSITIONS.every(pos => draftPrediction[pos] === existing.prediction?.[pos])) {
+        addToast('Aucune modification effectuée', 'info')
+        return
+      }
+
       if (!existing) {
         // First save — store initialPrediction for future modification tracking
         await upsertDoc('predictions', `${currentPlayerId}_${race.id}`, {
@@ -171,44 +187,41 @@ export default function PredictionSheet({
           leagueId: activeLeagueId,
           prediction: draftPrediction,
           initialPrediction: draftPrediction,
-          hasChanged: false,
+          modificationCount: 0,
           submittedAt: new Date(),
-          locked: false,
+          manualUnlockOverride: false,
         })
         addToast('Pronostic enregistré !', 'success')
-      } else if (existing.hasChanged) {
-        // Already used modification allowance — blocked (UI should prevent this)
-        addToast('Modification impossible : vous avez déjà modifié ce pronostic', 'error')
-        setSaving(false)
-        return
       } else {
-        // Modification: validate exactly 1 new driver not in initialPrediction
-        const ipDrivers = Object.values(existing.initialPrediction ?? existing.prediction ?? {})
-        const dpDrivers = Object.values(draftPrediction)
-        const newDrivers = dpDrivers.filter(d => !ipDrivers.includes(d))
-
-        if (newDrivers.length !== 1) {
-          addToast(
-            newDrivers.length === 0
-              ? 'Vous devez remplacer au moins 1 pilote par un nouveau (pas dans votre prono initial)'
-              : 'Vous ne pouvez remplacer qu\'un seul pilote à la fois',
-            'error'
-          )
-          setSaving(false)
-          return
-        }
-
+        // Modification — no cap: every save after the first just bumps the
+        // counter. Penalty (if any) stays informational/dynamic, driven by
+        // the league's own modificationPenalty rule.
         await upsertDoc('predictions', `${currentPlayerId}_${race.id}`, {
           ...existing,
           leagueId: activeLeagueId,
           prediction: draftPrediction,
-          hasChanged: true,
+          modificationCount: getModificationCount(existing) + 1,
           modifiedAt: new Date(),
         })
-        await upsertDoc('penalties', `pen_change_${currentPlayerId}_${race.id}_${Date.now()}`, {
-          playerId: currentPlayerId, raceId: race.id, type: 'change',
-        })
-        addToast('Pronostic modifié — pénalité -5 pts appliquée', 'warning')
+        addToast(
+          modPenaltyEnabled
+            ? `Pronostic modifié — pénalité -${modPenaltyAmount} pts appliquée`
+            : 'Pronostic modifié',
+          'warning'
+        )
+
+        // Best-effort informational penalty record — the prediction itself
+        // is already saved at this point, so a failure here (Firestore
+        // rules, transient error, etc.) must never block closing the sheet
+        // or show the user an error toast.
+        try {
+          await upsertDoc('penalties', `pen_change_${currentPlayerId}_${race.id}_${Date.now()}`, {
+            playerId: currentPlayerId, raceId: race.id, type: 'change', leagueId: activeLeagueId,
+            amount: modPenaltyAmount,
+          })
+        } catch (penErr) {
+          console.error(penErr)
+        }
       }
       handleClose()
     } catch (err) {
@@ -313,7 +326,7 @@ export default function PredictionSheet({
                             const driverName = pred.prediction[pos]
                             const photoUrl   = getDriverPhoto(drivers, driverName)
                             const detail     = details[pos]
-                            const isModified = pred.hasChanged && pred.prediction[pos] !== pred.initialPrediction?.[pos]
+                            const isModified = getModificationCount(pred) > 0 && pred.prediction[pos] !== pred.initialPrediction?.[pos]
                             return (
                               <div
                                 key={pos}
@@ -352,52 +365,39 @@ export default function PredictionSheet({
 
               {activeTab === 'pronostics' && currentRace.status !== 'completed' && (() => {
                 const existingPred = getMyPrediction(currentRace.id)
-                const isLocked = existingPred?.hasChanged === true
-                if (isLocked) return (
-                  <div className="space-y-5">
-                    <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
-                      <span className="text-lg">🔒</span>
-                      <div>
-                        <p className="text-xs font-black text-yellow-400">Modification unique utilisée</p>
-                        <p className="text-xs text-muted mt-0.5">Ce pronostic ne peut plus être modifié</p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="section-title">Votre pronostic (final)</p>
-                      <div className="space-y-3">
-                        {POSITIONS.map((pos, i) => {
-                          const driver = existingPred.prediction[pos]
-                          const teamColor = driver ? getTeamColor(driver) : null
-                          return (
-                            <div
-                              key={pos}
-                              className="w-full flex items-center gap-4 p-4 rounded-xl border-2 opacity-80"
-                              style={driver ? { borderColor: teamColor + '60', backgroundColor: teamColor + '10' } : {}}
-                            >
-                              <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>{i + 1}</div>
-                              <div className="flex-1 text-left">
-                                <p className="font-bold text-sm">{driver}</p>
-                                <p className="text-xs text-muted">{getDriverTeam(driver)?.name}</p>
-                              </div>
-                              <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: teamColor }} />
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  </div>
+                // Real count/sum of currently-existing "change" penalties for
+                // this prediction — not modificationCount or a theoretical
+                // count × amount, so an admin deletion is reflected
+                // immediately and stays consistent between the count and
+                // the points shown.
+                const changePenalties = penalties.filter(
+                  p => p.playerId === currentPlayerId && p.raceId === currentRace.id && p.type === 'change'
                 )
+                const realModCount = changePenalties.length
+                const modPenaltyTotal = changePenalties.reduce((sum, p) => sum + getPenaltyAmount(p), 0)
                 return (
                   <div className="space-y-5">
                     <div>
                       <p className="section-title">Votre pronostic podium</p>
-                      {existingPred && !existingPred.hasChanged && (
-                        <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                          <span className="text-sm">⚠️</span>
-                          <p className="text-xs text-yellow-400 font-bold">
-                            1 modification autorisée · Remplacez exactement 1 pilote par un nouveau (-5 pts)
-                          </p>
-                        </div>
+                      {existingPred && (
+                        modPenaltyEnabled ? (
+                          <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                            <span className="text-sm">⚠️</span>
+                            <p className="text-xs text-yellow-400 font-bold">
+                              {realModCount > 0
+                                ? <>Déjà {realModCount} modification{realModCount > 1 ? 's' : ''} · -{modPenaltyTotal} pts.{' '}Une nouvelle modification ajoutera -{modPenaltyAmount} pts.</>
+                                : <>Chaque modification vous coûtera -{modPenaltyAmount} pts.</>
+                              }
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="mb-3 flex items-center gap-2 p-2.5 bg-surfaceHigh/50 border border-border rounded-lg">
+                            <span className="text-sm">ℹ️</span>
+                            <p className="text-xs text-muted font-bold">
+                              Vous pouvez modifier votre podium autant de fois que vous le souhaitez avant le départ de la course.
+                            </p>
+                          </div>
+                        )
                       )}
                       <div className="space-y-3">
                         {POSITIONS.map((pos, i) => {
