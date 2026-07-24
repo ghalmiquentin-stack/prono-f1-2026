@@ -210,6 +210,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
         await upsertDoc('predictions', `${currentPlayerId}_${selectedRace.id}`, {
           playerId: currentPlayerId,
           raceId: selectedRace.id,
+          leagueId: activeLeagueId,
           prediction: draftPrediction,
           initialPrediction: draftPrediction,
           hasChanged: false,
@@ -241,6 +242,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
 
         await upsertDoc('predictions', `${currentPlayerId}_${selectedRace.id}`, {
           ...existing,
+          leagueId: activeLeagueId,
           prediction: draftPrediction,
           hasChanged: true,
           modifiedAt: new Date(),

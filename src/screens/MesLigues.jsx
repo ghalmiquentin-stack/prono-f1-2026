@@ -18,7 +18,7 @@ function rankWithTies(sorted) {
   }))
 }
 
-export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLeagueId, onSelectLeague, onClearActiveLeague, addToast }) {
+export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLeagueId, onSelectLeague, onActivateLeague, onClearActiveLeague, addToast }) {
   const { user } = useAuth()
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
 
@@ -198,76 +198,82 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
             return (
               <div
                 key={league._id}
-                onClick={() => onSelectLeague?.(league._id)}
+                onClick={() => { if (!isActive) onActivateLeague?.(league._id) }}
                 role="button"
                 tabIndex={0}
-                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onSelectLeague?.(league._id) }}
+                onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !isActive) onActivateLeague?.(league._id) }}
                 className={`card p-4 border transition-all cursor-pointer active:scale-[0.98] ${
                   isActive
                     ? 'border-green-500 bg-green-500/5'
                     : 'border-border'
                 }`}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Trophy size={18} className="text-gold shrink-0" />
-                    <h3 className="font-black text-lg truncate">{league.name}</h3>
-                    {isActive && (
-                      <span className="text-[10px] font-bold uppercase tracking-wide bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full shrink-0">
-                        Active
-                      </span>
-                    )}
+                <div className="mb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Trophy size={18} className="text-gold shrink-0" />
+                      <h3 className="font-black text-lg break-words">{league.name}</h3>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isLeagueAdmin && (
+                        <div className="relative">
+                          <button
+                            onClick={e => { e.stopPropagation(); setMenuOpenFor(menuOpenFor === league._id ? null : league._id) }}
+                            className="p-1.5 rounded-lg text-muted hover:text-white transition-colors"
+                            aria-label="Menu de la ligue"
+                          >
+                            <MoreVertical size={18} />
+                          </button>
+                          {menuOpenFor === league._id && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-10"
+                                onClick={e => { e.stopPropagation(); setMenuOpenFor(null) }}
+                              />
+                              <div className="absolute right-0 top-full mt-1 z-20 w-48 bg-surface border border-border rounded-xl shadow-2xl overflow-hidden">
+                                <button
+                                  onClick={e => { e.stopPropagation(); setMenuOpenFor(null); onOpenLeagueSettings?.(league._id) }}
+                                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-bold text-left hover:bg-surfaceHigh transition-colors"
+                                >
+                                  <Settings size={16} />
+                                  Réglages
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); openDeleteSheet({ league }) }}
+                                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-bold text-left text-red-400 hover:bg-red-500/10 transition-colors"
+                                >
+                                  <Trash2 size={16} />
+                                  Supprimer la ligue
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                      <button
+                        onClick={e => { e.stopPropagation(); openLeaveSheet({ profile, league, isLeagueAdmin }) }}
+                        className="p-1.5 rounded-lg text-muted hover:text-accent transition-colors"
+                        aria-label="Quitter la ligue"
+                      >
+                        <LogOut size={18} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isLeagueAdmin && (
-                      <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-accent/20 text-accent px-2 py-1 rounded-full">
-                        <Crown size={12} />
-                        Admin
-                      </span>
-                    )}
-                    {isLeagueAdmin && (
-                      <div className="relative">
-                        <button
-                          onClick={e => { e.stopPropagation(); setMenuOpenFor(menuOpenFor === league._id ? null : league._id) }}
-                          className="p-1.5 rounded-lg text-muted hover:text-white transition-colors"
-                          aria-label="Menu de la ligue"
-                        >
-                          <MoreVertical size={18} />
-                        </button>
-                        {menuOpenFor === league._id && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-10"
-                              onClick={e => { e.stopPropagation(); setMenuOpenFor(null) }}
-                            />
-                            <div className="absolute right-0 top-full mt-1 z-20 w-48 bg-surface border border-border rounded-xl shadow-2xl overflow-hidden">
-                              <button
-                                onClick={e => { e.stopPropagation(); setMenuOpenFor(null); onOpenLeagueSettings?.(league._id) }}
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-bold text-left hover:bg-surfaceHigh transition-colors"
-                              >
-                                <Settings size={16} />
-                                Réglages
-                              </button>
-                              <button
-                                onClick={e => { e.stopPropagation(); openDeleteSheet({ league }) }}
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-bold text-left text-red-400 hover:bg-red-500/10 transition-colors"
-                              >
-                                <Trash2 size={16} />
-                                Supprimer la ligue
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
-                    <button
-                      onClick={e => { e.stopPropagation(); openLeaveSheet({ profile, league, isLeagueAdmin }) }}
-                      className="p-1.5 rounded-lg text-muted hover:text-accent transition-colors"
-                      aria-label="Quitter la ligue"
-                    >
-                      <LogOut size={18} />
-                    </button>
-                  </div>
+                  {(isActive || isLeagueAdmin) && (
+                    <div className="flex items-center gap-2 mt-2">
+                      {isActive && (
+                        <span className="text-[10px] font-bold uppercase tracking-wide bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full shrink-0">
+                          Active
+                        </span>
+                      )}
+                      {isLeagueAdmin && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-accent/20 text-accent px-2 py-1 rounded-full">
+                          <Crown size={12} />
+                          Admin
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-4">

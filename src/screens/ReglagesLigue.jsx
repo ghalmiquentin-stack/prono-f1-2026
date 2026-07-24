@@ -32,6 +32,36 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
   const isSoleAdmin = isLeagueAdmin && league.adminUids.length === 1
   const myActiveProfile = myProfiles.find(p => p.leagueId === leagueId && p.active !== false)
 
+  // ── Édition du nom de la ligue ───────────────────────────────────────────
+  const [nameDraft, setNameDraft] = useState('')
+  const [nameLoaded, setNameLoaded] = useState(false)
+  const [savingName, setSavingName] = useState(false)
+
+  // Reset so the field re-syncs from Firestore if the viewed league changes.
+  useEffect(() => { setNameLoaded(false) }, [leagueId])
+
+  useEffect(() => {
+    if (!league || nameLoaded) return
+    setNameDraft(league.name ?? '')
+    setNameLoaded(true)
+  }, [league, nameLoaded])
+
+  const nameInvalid = !nameDraft.trim()
+  const nameChanged = nameDraft.trim() !== (league?.name ?? '').trim()
+
+  const saveLeagueName = async () => {
+    if (nameInvalid || !nameChanged) return
+    setSavingName(true)
+    try {
+      await upsertDoc('leagues', leagueId, { name: nameDraft.trim() })
+      addToast?.('Nom de la ligue mis à jour', 'success')
+    } catch {
+      addToast?.('Erreur lors de la sauvegarde', 'error')
+    } finally {
+      setSavingName(false)
+    }
+  }
+
   // ── Édition des règles ───────────────────────────────────────────────────
   const [modEnabled, setModEnabled] = useState(true)
   const [modAmount, setModAmount] = useState('5')
@@ -208,26 +238,46 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
       </div>
 
       <div className="px-5 space-y-5">
-        {/* ── Infos ligue ── */}
-        <div className="card p-4 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs text-muted font-bold uppercase tracking-wide">Nom de la ligue</p>
-            <p className="font-black text-lg truncate">{league?.name}</p>
-          </div>
-          <div className="text-right shrink-0">
-            <p className="text-xs text-muted font-bold uppercase tracking-wide">Code d'invitation</p>
-            <div className="flex items-center gap-2 justify-end">
-              <p className="font-mono font-black tracking-widest text-lg">{league?.code}</p>
-              <button
-                onClick={copyInviteCode}
-                className="p-1.5 rounded-lg text-muted hover:text-white transition-colors"
-                aria-label="Copier le code d'invitation"
-              >
-                {codeCopied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
-              </button>
-            </div>
+        {/* ── Code d'invitation ── */}
+        <div className="card p-4">
+          <p className="text-xs text-muted font-bold uppercase tracking-wide mb-1.5">Code d'invitation</p>
+          <div className="flex items-center gap-2">
+            <p className="font-mono font-black tracking-widest text-lg flex-1">{league?.code}</p>
+            <button
+              onClick={copyInviteCode}
+              className="p-1.5 rounded-lg text-muted hover:text-white transition-colors"
+              aria-label="Copier le code d'invitation"
+            >
+              {codeCopied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
+            </button>
           </div>
         </div>
+
+        {/* ── Nom de la ligue ── */}
+        {isLeagueAdmin && (
+          <div className="card p-5 space-y-3">
+            <p className="section-title">Nom de la ligue</p>
+            <input
+              type="text"
+              value={nameDraft}
+              onChange={e => setNameDraft(e.target.value)}
+              className="input-field"
+              maxLength={30}
+              placeholder="Nom de la ligue"
+            />
+            <button
+              onClick={saveLeagueName}
+              disabled={nameInvalid || !nameChanged || savingName}
+              className={`w-full py-3.5 rounded-xl font-black text-base transition-all active:scale-95 ${
+                !nameInvalid && nameChanged && !savingName
+                  ? 'bg-accent text-white shadow-glow-red'
+                  : 'bg-surfaceHigh text-muted cursor-not-allowed'
+              }`}
+            >
+              {savingName ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+          </div>
+        )}
 
         {/* ── Règles ── */}
         <div className="card p-5 space-y-4">
@@ -365,6 +415,12 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
 
           {tab === 'penalties' && (
             <div className="space-y-3">
+              <button
+                onClick={() => setPenaltySheetOpen(true)}
+                className="w-full btn-primary text-center"
+              >
+                + Ajouter une pénalité
+              </button>
               {penalties.length === 0 ? (
                 <div className="text-center py-10 text-muted">
                   <span className="text-4xl block mb-3">✅</span>
@@ -381,7 +437,7 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                       <div className="flex-1">
                         <p className="font-bold text-sm">{identity?.displayName ?? pen.playerId}</p>
                         <p className="text-xs text-muted">
-                          GP {race?.name ?? pen.raceId} · {pen.type === 'late' ? 'Tardif (-10)' : 'Modification (-5)'}
+                          GP {race?.name ?? pen.raceId} · {pen.type === 'late' ? 'Tardif' : 'Modification'}
                         </p>
                       </div>
                       <span className={`text-xs font-bold px-2 py-1 rounded-full ${
@@ -399,12 +455,6 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                   )
                 })
               )}
-              <button
-                onClick={() => setPenaltySheetOpen(true)}
-                className="w-full btn-primary text-center"
-              >
-                + Ajouter une pénalité
-              </button>
             </div>
           )}
         </div>

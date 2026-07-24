@@ -150,6 +150,14 @@ export default function App() {
     setActiveTab('accueil')
   }, [])
 
+  // Same as selectActiveLeague but without the redirect to Accueil — used
+  // when picking a league from within Mes Ligues itself, where the user
+  // should stay put and just see the "Active" badge move.
+  const activateLeague = useCallback((leagueId) => {
+    persistActiveLeagueId(leagueId)
+    setPendingActiveLeagueId(leagueId)
+  }, [])
+
   // Explicitly clears the persisted active league (e.g. right after leaving
   // it with no other league to fall back on), without waiting on the
   // App-level stabilization effects.
@@ -210,6 +218,7 @@ export default function App() {
       onOpenLeagueSettings={openLeagueSettings}
       activeLeagueId={effectiveActiveLeagueId}
       onSelectLeague={selectActiveLeague}
+      onActivateLeague={activateLeague}
       onClearActiveLeague={clearActiveLeague}
       addToast={addToast}
     />
