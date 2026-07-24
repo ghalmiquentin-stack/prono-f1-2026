@@ -228,7 +228,7 @@ export default function App() {
     switch (activeTab) {
       case 'accueil':
         return hasAnyLeague
-          ? <Accueil currentPlayerId={playerId} setActiveTab={setActiveTab} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} />
+          ? <Accueil currentPlayerId={playerId} setActiveTab={setActiveTab} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} addToast={addToast} />
           : leaguesScreen
       case 'courses':
         return hasAnyLeague
@@ -267,7 +267,7 @@ export default function App() {
         return <ReglagesSuperAdmin addToast={addToast} />
       default:
         return hasAnyLeague
-          ? <Accueil currentPlayerId={playerId} setActiveTab={setActiveTab} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} />
+          ? <Accueil currentPlayerId={playerId} setActiveTab={setActiveTab} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} addToast={addToast} />
           : leaguesScreen
     }
   }

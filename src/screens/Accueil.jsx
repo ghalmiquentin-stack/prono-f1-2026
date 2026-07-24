@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
@@ -7,6 +7,7 @@ import { getProfile } from '../utils/profiles'
 import Countdown from '../components/Countdown'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import PlayerBadge from '../components/PlayerBadge'
+import PredictionSheet from '../components/PredictionSheet'
 import Skeleton, { SkeletonCard } from '../components/Skeleton'
 
 const PLAYERS_ORDER = ['william', 'quentin', 'alex', 'romain']
@@ -85,8 +86,9 @@ function formatPredTime(ts) {
   return `${datePart} à ${timeInTz('Europe/Paris')} 🇫🇷 / ${timeInTz('Asia/Dubai')} 🇦🇪`
 }
 
-export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId }) {
+export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId, addToast }) {
   const { user } = useAuth()
+  const [predictionSheetOpen, setPredictionSheetOpen] = useState(false)
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
   const { data: players, loading: playersLoading } = useCollection(user ? 'players' : null, leagueConstraint)
   const { data: profiles } = useCollection(user ? 'profiles' : null)
@@ -271,7 +273,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                     <span className="text-sm text-accent font-semibold">Pas encore de pronostic</span>
                   </div>
                   <button
-                    onClick={() => setActiveTab('courses')}
+                    onClick={() => setPredictionSheetOpen(true)}
                     className="text-xs bg-accent text-white font-bold px-3 py-1.5 rounded-lg"
                   >
                     Pronostiquer →
@@ -479,6 +481,21 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           </div>
         ) : null}
       </div>
+
+      <PredictionSheet
+        isOpen={predictionSheetOpen}
+        race={nextRace}
+        races={races}
+        onClose={() => setPredictionSheetOpen(false)}
+        currentPlayerId={currentPlayerId}
+        activeLeagueId={activeLeagueId}
+        addToast={addToast}
+        players={players}
+        profiles={profiles}
+        predictions={predictions}
+        penalties={penalties}
+        drivers={drivers}
+      />
     </div>
   )
 }
