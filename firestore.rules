@@ -16,6 +16,27 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/leagues/$(leagueId)).data.adminUids;
     }
 
+    // Same "own player doc" mechanism already used by the predictions rules
+    // (get the players/{playerId} doc and compare authUid), plus an extra
+    // check that the player's own leagueId actually matches the leagueId
+    // being written — predictions doesn't enforce this today, but we want
+    // it here since penalties self-service is a new, narrower capability.
+    function isOwnPlayerInLeague(playerId, leagueId) {
+      let player = get(/databases/$(database)/documents/players/$(playerId)).data;
+      return isSignedIn()
+        && player.authUid == request.auth.uid
+        && player.leagueId == leagueId;
+    }
+
+    // The league's modification-penalty rule must be enabled, and the
+    // amount on the incoming penalty must exactly match the currently
+    // configured amount — a player can never write an arbitrary amount.
+    function matchesModificationPenaltyRule(leagueId, amount) {
+      let rules = get(/databases/$(database)/documents/leagues/$(leagueId)).data.rules;
+      return rules.modificationPenalty.enabled == true
+        && rules.modificationPenalty.amount == amount;
+    }
+
     // ── leagues ──────────────────────────────────────────────────────────
     match /leagues/{leagueId} {
       allow read: if isSignedIn();
@@ -81,7 +102,17 @@ service cloud.firestore {
     match /penalties/{penId} {
       allow read: if isSignedIn();
 
-      allow create: if isSuperAdmin() || isLeagueAdmin(request.resource.data.leagueId);
+      // Admins can create any penalty. A player can only self-create their
+      // own automatic "change" (podium modification) penalty — never for
+      // another player, never another type, and never for an amount other
+      // than the league's currently configured modificationPenalty amount.
+      allow create: if isSuperAdmin()
+        || isLeagueAdmin(request.resource.data.leagueId)
+        || (
+          request.resource.data.type == 'change'
+          && isOwnPlayerInLeague(request.resource.data.playerId, request.resource.data.leagueId)
+          && matchesModificationPenaltyRule(request.resource.data.leagueId, request.resource.data.amount)
+        );
 
       allow update, delete: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
     }

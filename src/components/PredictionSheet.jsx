@@ -217,7 +217,7 @@ export default function PredictionSheet({
         try {
           await upsertDoc('penalties', `pen_change_${currentPlayerId}_${race.id}_${Date.now()}`, {
             playerId: currentPlayerId, raceId: race.id, type: 'change', leagueId: activeLeagueId,
-            amount: modPenaltyAmount,
+            amount: modPenaltyAmount, createdAt: new Date(),
           })
         } catch (penErr) {
           console.error(penErr)

@@ -19,6 +19,22 @@ function formatSubmittedDate(ts) {
   return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
+// Same "Xh_MM" time formatting convention as "Soumis le…" on the Accueil
+// card (see formatPredTime there), applied to a single short date+time —
+// no dual-timezone flags here, this is for the compact admin penalty row.
+// Returns null (not '—') when absent, so the caller can omit it entirely.
+function formatPenaltyDate(ts) {
+  if (!ts) return null
+  const date = ts?.toDate?.() ?? new Date(ts)
+  const datePart = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(date)
+  const h = parts.find(p => p.type === 'hour')?.value ?? '00'
+  const m = parts.find(p => p.type === 'minute')?.value ?? '00'
+  return `${datePart}, ${h}h${m}`
+}
+
 export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague, onClearActiveLeague, setActiveTab, addToast }) {
   const { user } = useAuth()
   const { data: league, loading: leagueLoading } = useDocument(user ? 'leagues' : null, leagueId)
@@ -153,7 +169,10 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
       ? (league?.rules?.postQualifsPenalty?.amount ?? 10)
       : (league?.rules?.modificationPenalty?.amount ?? 5)
     try {
-      await upsertDoc('penalties', id, { playerId: penaltyPlayerId, raceId: penaltyRaceId, type: penaltyType, leagueId, amount })
+      await upsertDoc('penalties', id, {
+        playerId: penaltyPlayerId, raceId: penaltyRaceId, type: penaltyType, leagueId, amount,
+        createdAt: new Date(),
+      })
       addToast?.('Pénalité ajoutée', 'warning')
       setPenaltySheetOpen(false)
       setPenaltyRaceId(null)
@@ -505,10 +524,12 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                         <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border">
                           {playerPenalties.map(pen => {
                             const race = races.find(r => r.id === pen.raceId)
+                            const createdAtLabel = formatPenaltyDate(pen.createdAt)
                             return (
                               <div key={pen._id} className="flex items-center gap-3 pt-2">
                                 <p className="text-xs text-muted flex-1">
                                   GP {race?.name ?? pen.raceId} · {pen.type === 'late' ? 'Tardif' : 'Modification'}
+                                  {createdAtLabel && ` · ${createdAtLabel}`}
                                 </p>
                                 <span className={`text-xs font-bold px-2 py-1 rounded-full ${
                                   pen.type === 'late' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'
