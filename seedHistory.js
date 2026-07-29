@@ -8,6 +8,7 @@
 import { readFileSync } from 'fs'
 import { initializeApp } from 'firebase/app'
 import { getFirestore, doc, setDoc } from 'firebase/firestore'
+import { formatLapDuration } from './src/utils/formatLapDuration.js'
 
 // ── Parse .env ────────────────────────────────────────────────────────────────
 const envRaw = readFileSync(new URL('./.env', import.meta.url), 'utf-8')
@@ -33,13 +34,6 @@ const firebaseConfig = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const toTitle = s => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : null
 const toTitleAll = s => s ? s.split(' ').map(toTitle).join(' ') : null
-
-function formatLapDuration(seconds) {
-  if (!seconds) return null
-  const m = Math.floor(seconds / 60)
-  const s = (seconds % 60).toFixed(3).padStart(6, '0')
-  return `${m}:${s}`
-}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 

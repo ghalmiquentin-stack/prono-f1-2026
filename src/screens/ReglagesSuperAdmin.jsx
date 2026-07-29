@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, useDocument, upsertDoc } from '../hooks/useFirestore'
 import { clearDatabase } from '../data/seed'
+import { resolveMeetingKey } from '../utils/openf1'
+import { formatLapDuration } from '../utils/formatLapDuration'
 import { TEAMS } from '../data/drivers'
 import BottomSheet from '../components/BottomSheet'
 import ConfirmModal from '../components/ConfirmModal'
@@ -14,7 +16,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
 
   // ── Result sheet ─────────────────────────────────────────────────────────
   const [resultSheetOpen, setResultSheetOpen] = useState(false)
-  const [selectedRace, setSelectedRace] = useState(null)
+  const [selectedRaceId, setSelectedRaceId] = useState(null)
   const [resultDraft, setResultDraft] = useState({ P1: null, P2: null, P3: null })
   const [resultPosition, setResultPosition] = useState(null)
   const [driverPickerOpen, setDriverPickerOpen] = useState(false)
@@ -32,6 +34,13 @@ export default function ReglagesSuperAdmin({ addToast }) {
   const [openf1ResultFetching, setOpenf1ResultFetching] = useState(false)
   const [openf1ResultMsg, setOpenf1ResultMsg] = useState(null)
 
+  // ── OpenF1 qualifying fetch ───────────────────────────────────────────────
+  // Writes to races/{id} (qualifying_2026, meeting_key) — super-admin only
+  // per firestore.rules, hence this lives here rather than in the
+  // player-facing PredictionSheet modal (which only ever reads this data).
+  const [openf1QualFetching, setOpenf1QualFetching] = useState(false)
+  const [openf1QualMsg, setOpenf1QualMsg] = useState(null)
+
   // ── Firestore ────────────────────────────────────────────────────────────
   const { data: races } = useCollection(user ? 'races' : null)
   const { data: drivers } = useCollection(user ? 'drivers' : null)
@@ -40,6 +49,15 @@ export default function ReglagesSuperAdmin({ addToast }) {
   const sortedRaces = useMemo(() =>
     [...races].sort((a, b) => a.id - b.id),
     [races]
+  )
+
+  // Reactive view of the selected race (stays fresh after Firestore writes —
+  // e.g. meeting_key/qualifying_2026 persisted by a fetch below), instead of
+  // a frozen snapshot captured once when the sheet was opened. Mirrors
+  // PredictionSheet.jsx's currentRace.
+  const selectedRace = useMemo(
+    () => selectedRaceId != null ? (sortedRaces.find(r => r.id === selectedRaceId) ?? null) : null,
+    [sortedRaces, selectedRaceId]
   )
 
   // Check the admin custom claim on the connected Firebase user
@@ -66,17 +84,18 @@ export default function ReglagesSuperAdmin({ addToast }) {
 
   // ── Admin handlers ────────────────────────────────────────────────────────
   const openResultSheet = (race) => {
-    setSelectedRace(race)
+    setSelectedRaceId(race.id)
     setResultDraft(race.result ?? { P1: null, P2: null, P3: null })
     setResultSheetOpen(true)
   }
 
   const closeResultSheet = () => {
     setResultSheetOpen(false)
-    setSelectedRace(null)
+    setSelectedRaceId(null)
     setResultPosition(null)
     setDriverPickerOpen(false)
     setOpenf1ResultMsg(null)
+    setOpenf1QualMsg(null)
   }
 
   const selectDriver = (driver) => {
@@ -98,7 +117,6 @@ export default function ReglagesSuperAdmin({ addToast }) {
         ...selectedRace,
         result: resultDraft,
         status: 'completed',
-        qualifying_locked: true,
       })
       addToast(`Résultat GP ${selectedRace.name} enregistré !`, 'success')
       closeResultSheet()
@@ -134,18 +152,6 @@ export default function ReglagesSuperAdmin({ addToast }) {
 
   // ── OpenF1 helpers ────────────────────────────────────────────────────────
   const OPENF1_SESSION_KEY = 11234
-
-  const RACE_COUNTRY_MAP = {
-    'Australie': 'Australia', 'Chine': 'China', 'Japon': 'Japan',
-    'Bahreïn': 'Bahrain', 'Arabie Saoudite': 'Saudi Arabia',
-    'Miami': 'United States', 'Émilie-Romagne': 'Italy', 'Monaco': 'Monaco',
-    'Canada': 'Canada', 'Espagne': 'Spain', 'Autriche': 'Austria',
-    'Grande-Bretagne': 'Great Britain', 'Belgique': 'Belgium',
-    'Hongrie': 'Hungary', 'Pays-Bas': 'Netherlands', 'Italie': 'Italy',
-    'Azerbaïdjan': 'Azerbaijan', 'Singapour': 'Singapore',
-    'États-Unis': 'United States', 'Mexique': 'Mexico', 'Brésil': 'Brazil',
-    'Las Vegas': 'United States', 'Qatar': 'Qatar', 'Abu Dhabi': 'Abu Dhabi',
-  }
 
   const toTitle = s => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : null
   const toTitleAll = s => s ? s.split(' ').map(toTitle).join(' ') : null
@@ -193,18 +199,8 @@ export default function ReglagesSuperAdmin({ addToast }) {
     setOpenf1ResultFetching(true)
     setOpenf1ResultMsg(null)
     try {
-      // Step 1: resolve meeting_key
-      let meetingKey = selectedRace.meeting_key ?? null
-      if (!meetingKey) {
-        const countryName = RACE_COUNTRY_MAP[selectedRace.name]
-        if (!countryName) throw new Error(`Pays non mappé : "${selectedRace.name}"`)
-        const mRes = await fetch(
-          `https://api.openf1.org/v1/meetings?year=2026&country_name=${encodeURIComponent(countryName)}`
-        )
-        const meetings = await mRes.json()
-        if (!meetings.length) throw new Error(`Aucune réunion OpenF1 pour ${selectedRace.name}`)
-        meetingKey = meetings[0].meeting_key
-      }
+      // Step 1: resolve meeting_key (cached on the race doc after first lookup)
+      const meetingKey = await resolveMeetingKey(selectedRace)
 
       // Step 2: get Race session_key
       const sRes = await fetch(
@@ -240,6 +236,59 @@ export default function ReglagesSuperAdmin({ addToast }) {
       setOpenf1ResultMsg({ type: 'error', text: err.message })
     } finally {
       setOpenf1ResultFetching(false)
+    }
+  }
+
+  // Moved from PredictionSheet.jsx — writing qualifying_2026/meeting_key to
+  // races/{id} requires super-admin per firestore.rules, so the trigger
+  // belongs on this admin-only screen, not the player-facing race modal.
+  const fetchQualifyingFromOpenF1 = async () => {
+    if (!selectedRace) return
+    setOpenf1QualFetching(true)
+    setOpenf1QualMsg(null)
+    try {
+      const meetingKey = await resolveMeetingKey(selectedRace)
+
+      const sessRes = await fetch(
+        `https://api.openf1.org/v1/sessions?meeting_key=${meetingKey}&session_name=Qualifying`
+      )
+      const sessions = await sessRes.json()
+      const qualSession = sessions?.[0]
+      if (!qualSession) throw new Error('Session qualifications introuvable')
+
+      const gridRes = await fetch(
+        `https://api.openf1.org/v1/starting_grid?session_key=${qualSession.session_key}&position<=3`
+      )
+      const grid = await gridRes.json()
+      grid.sort((a, b) => a.position - b.position)
+
+      const resolve = num =>
+        drivers.find(d => d.driver_number === num)?.display_name ?? toTitle(String(num))
+
+      // Each grid entry already carries its own lap_duration — same field
+      // seedHistory.js reads for last year's pole, just never captured here
+      // before.
+      const buildEntry = pos => {
+        const entry = grid.find(g => g.position === pos)
+        if (!entry) return null
+        return {
+          name: resolve(entry.driver_number),
+          lap_duration: formatLapDuration(entry.lap_duration),
+        }
+      }
+
+      const qualifying = {
+        P1: buildEntry(1),
+        P2: buildEntry(2),
+        P3: buildEntry(3),
+        fetchedAt: new Date().toISOString(),
+      }
+      await upsertDoc('races', String(selectedRace.id), { qualifying_2026: qualifying })
+      setOpenf1QualMsg({ type: 'success', text: 'Qualifications récupérées' })
+    } catch (err) {
+      setOpenf1QualMsg({ type: 'error', text: err.message })
+    } finally {
+      setOpenf1QualFetching(false)
     }
   }
 
@@ -400,6 +449,28 @@ export default function ReglagesSuperAdmin({ addToast }) {
                   : 'bg-red-500/10 text-red-400'
               }`}>
                 {openf1ResultMsg.type === 'success' ? '✓ ' : '✕ '}{openf1ResultMsg.text}
+              </p>
+            )}
+
+            {/* ── OpenF1 qualifying fetch button ── */}
+            <button
+              onClick={fetchQualifyingFromOpenF1}
+              disabled={openf1QualFetching}
+              className="w-full flex items-center gap-3 p-3 rounded-xl border border-accent/30 bg-accent/10 active:opacity-70 text-left"
+            >
+              <span className="text-xl">{openf1QualFetching ? '⏳' : '⚡'}</span>
+              <div>
+                <p className="font-bold text-sm">{openf1QualFetching ? 'Récupération…' : 'Récupérer les qualifs depuis OpenF1'}</p>
+                <p className="text-xs text-muted">Enregistre le top 3 des qualifications</p>
+              </div>
+            </button>
+            {openf1QualMsg && (
+              <p className={`text-xs font-bold px-3 py-2 rounded-lg -mt-2 ${
+                openf1QualMsg.type === 'success'
+                  ? 'bg-green-500/10 text-green-400'
+                  : 'bg-red-500/10 text-red-400'
+              }`}>
+                {openf1QualMsg.type === 'success' ? '✓ ' : '✕ '}{openf1QualMsg.text}
               </p>
             )}
 

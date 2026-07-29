@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useDocument, upsertDoc } from '../hooks/useFirestore'
 import { calculateRaceScore } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
@@ -45,9 +45,6 @@ export default function PredictionSheet({
   const [driverPickerOpen, setDriverPickerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('pronostics')
-  const [qualLoading, setQualLoading] = useState(false)
-  const [qualError, setQualError] = useState(null)
-  const [qualRefreshing, setQualRefreshing] = useState(false)
 
   // League rules — read here (not passed down) so the modal stays correct
   // regardless of which screen opens it.
@@ -85,7 +82,6 @@ export default function PredictionSheet({
       const existing = getMyPrediction(race.id)
       setDraftPrediction(existing?.prediction ?? { P1: null, P2: null, P3: null })
       setActiveTab(race.status === 'upcoming' ? 'pronostics' : 'result')
-      setQualError(null)
     }
     prevOpenRef.current = isOpen
   }, [isOpen, race])
@@ -100,50 +96,6 @@ export default function PredictionSheet({
     }
   }, [currentRace?.status, activeTab])
 
-  const fetchQualifying = useCallback(async (r, isRefresh = false) => {
-    const meetingKey = r.meeting_key_2026
-    if (!meetingKey) return
-    isRefresh ? setQualRefreshing(true) : setQualLoading(true)
-    setQualError(null)
-    try {
-      const sessRes = await fetch(
-        `https://api.openf1.org/v1/sessions?meeting_key=${meetingKey}&session_name=Qualifying`
-      )
-      const sessions = await sessRes.json()
-      const qualSession = sessions?.[0]
-      if (!qualSession) throw new Error('Session qualifications introuvable')
-
-      const gridRes = await fetch(
-        `https://api.openf1.org/v1/starting_grid?session_key=${qualSession.session_key}&position<=3`
-      )
-      const grid = await gridRes.json()
-      grid.sort((a, b) => a.position - b.position)
-
-      const resolve = num =>
-        drivers.find(d => d.driver_number === num)?.display_name ?? toTitle(String(num))
-
-      const qualifying = {
-        P1: resolve(grid.find(g => g.position === 1)?.driver_number),
-        P2: resolve(grid.find(g => g.position === 2)?.driver_number),
-        P3: resolve(grid.find(g => g.position === 3)?.driver_number),
-        fetchedAt: new Date().toISOString(),
-      }
-      await upsertDoc('races', String(r.id), { qualifying_2026: qualifying })
-    } catch (err) {
-      setQualError(err.message)
-    } finally {
-      setQualLoading(false)
-      setQualRefreshing(false)
-    }
-  }, [drivers])
-
-  // Auto-fetch qualifying when opening Résultat tab
-  useEffect(() => {
-    if (activeTab !== 'result' || !currentRace) return
-    if (!currentRace.qualifying_locked && !currentRace.qualifying_2026 && currentRace.meeting_key_2026) {
-      fetchQualifying(currentRace)
-    }
-  }, [activeTab, currentRace?.id])
 
   const handleClose = () => {
     setActivePosition(null)
@@ -497,42 +449,17 @@ export default function PredictionSheet({
                     </div>
                   )}
 
-                  {/* Qualifications 2026 */}
+                  {/* Qualifications 2026 — strictly read-only here: fetching/
+                      writing this data requires super-admin (races/{id} write
+                      rule), so the trigger lives in ReglagesSuperAdmin.jsx,
+                      not this player-facing modal. */}
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="section-title mb-0">Qualifications 2026</p>
-                      {currentRace.qualifying_2026 && !currentRace.qualifying_locked && (
-                        <button
-                          onClick={() => fetchQualifying(currentRace, true)}
-                          disabled={qualRefreshing}
-                          className="text-muted text-sm hover:text-white transition-colors disabled:opacity-40"
-                          title="Rafraîchir depuis OpenF1"
-                        >
-                          {qualRefreshing ? '…' : '🔄'}
-                        </button>
-                      )}
-                    </div>
-
-                    {qualLoading ? (
-                      <div className="flex items-center gap-2 p-3 bg-surfaceHigh rounded-lg">
-                        <span className="text-muted text-sm animate-pulse">Chargement depuis OpenF1…</span>
-                      </div>
-                    ) : qualError ? (
-                      <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                        <p className="text-xs text-red-400">{qualError}</p>
-                        {currentRace.meeting_key_2026 && (
-                          <button
-                            onClick={() => fetchQualifying(currentRace)}
-                            className="text-xs text-accent mt-2 font-bold"
-                          >
-                            Réessayer
-                          </button>
-                        )}
-                      </div>
-                    ) : currentRace.qualifying_2026 ? (
+                    <p className="section-title mb-2">Qualifications 2026</p>
+                    {currentRace.qualifying_2026 ? (
                       <div className="space-y-2">
                         {POSITIONS.map((pos, i) => {
-                          const driverName = currentRace.qualifying_2026[pos]
+                          const entry      = currentRace.qualifying_2026[pos]
+                          const driverName = entry?.name
                           const photoUrl   = getDriverPhoto(drivers, driverName)
                           return (
                             <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
@@ -547,17 +474,17 @@ export default function PredictionSheet({
                                 <p className="font-bold leading-tight">{driverName}</p>
                                 <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
                               </div>
+                              {entry?.lap_duration && (
+                                <span className="text-xs font-bold text-accent">{entry.lap_duration}</span>
+                              )}
                               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getTeamColor(driverName) }} />
                             </div>
                           )
                         })}
-                        {currentRace.qualifying_locked && (
-                          <p className="text-[10px] text-muted text-right">🔒 Données figées</p>
-                        )}
                       </div>
-                    ) : !currentRace.meeting_key_2026 ? (
-                      <p className="text-sm text-muted p-3">Qualifications pas encore disputées</p>
-                    ) : null}
+                    ) : (
+                      <p className="text-sm text-muted p-3">Qualifications pas encore disponibles</p>
+                    )}
                   </div>
                 </div>
               )}

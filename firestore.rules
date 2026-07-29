@@ -93,7 +93,24 @@ service cloud.firestore {
         || isLeagueAdmin(request.resource.data.leagueId)
         || get(/databases/$(database)/documents/players/$(request.resource.data.playerId)).data.authUid == request.auth.uid;
 
-      allow update, delete: if isSuperAdmin()
+      // The "own prediction" clause is field-restricted: a player may only
+      // ever touch the content of their own pronostic and its own tracking
+      // fields (matches every upsertDoc('predictions', ...) a player
+      // triggers themselves, in PredictionSheet.jsx's savePrediction) —
+      // never manualUnlockOverride, which must stay admin-only (see
+      // ReglagesLigue.jsx's toggleManualUnlock). Without this, a player
+      // could grant themselves the "race started" edit-lock exception
+      // directly via the API, bypassing the admin-only intent.
+      allow update: if isSuperAdmin()
+        || isLeagueAdmin(resource.data.leagueId)
+        || (
+          get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.authUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'prediction', 'initialPrediction', 'submittedAt', 'modifiedAt', 'modificationCount', 'leagueId', 'updatedAt'
+          ])
+        );
+
+      allow delete: if isSuperAdmin()
         || isLeagueAdmin(resource.data.leagueId)
         || get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.authUid == request.auth.uid;
     }
