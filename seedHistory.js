@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Seed Firebase `races_history` collection with 2025 podium + pole data
+// Seed Firebase `races_history` collection with the previous season's
+// podium + pole data (REFERENCE_YEAR below, computed dynamically so this
+// keeps working unmodified season after season).
 // Usage: node seedHistory.js
 // Requires: .env file with VITE_FIREBASE_* variables in the project root
 
@@ -52,8 +54,12 @@ async function openf1(path, retries = 3) {
   return res.json()
 }
 
-// ── 2026 race list with 2025 matching config ──────────────────────────────────
-// country_name: OpenF1 country_name for 2025
+// The season to pull history from — always "this year minus one", so this
+// script keeps producing correct data next season without editing it.
+const REFERENCE_YEAR = new Date().getFullYear() - 1
+
+// ── Current-season race list with previous-season matching config ─────────────
+// country_name: OpenF1 country_name for REFERENCE_YEAR
 // location_filter: optional string to match meeting_official_name or location
 // new_circuit: true if no 2025 equivalent exists
 const RACES_2026 = [
@@ -95,10 +101,10 @@ async function main() {
     }
 
     try {
-      // Find 2025 meeting
-      const meetings = await openf1(`/meetings?year=2025&country_name=${encodeURIComponent(race.country)}`)
+      // Find REFERENCE_YEAR meeting
+      const meetings = await openf1(`/meetings?year=${REFERENCE_YEAR}&country_name=${encodeURIComponent(race.country)}`)
       if (!meetings.length) {
-        console.log(`⚠️  ${label} → No 2025 meeting found for country "${race.country}"`)
+        console.log(`⚠️  ${label} → No ${REFERENCE_YEAR} meeting found for country "${race.country}"`)
         continue
       }
 
@@ -170,10 +176,14 @@ async function main() {
       }
 
       // ── Store in Firebase ─────────────────────────────────────────────────
+      // Generic field names (not year-suffixed) + an explicit `year` field —
+      // consumers read `year` to label the data, instead of a year baked
+      // into the field name itself.
       await setDoc(doc(db, 'races_history', String(race.id)), {
-        podium_2025: podium,
-        pole_2025:   pole,
-        meeting_key_2025: meeting.meeting_key,
+        year: REFERENCE_YEAR,
+        podium: podium,
+        pole: pole,
+        meetingKey: meeting.meeting_key,
         seededAt: new Date().toISOString(),
       })
 

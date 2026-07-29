@@ -90,6 +90,16 @@ export default function PredictionSheet({
     prevOpenRef.current = isOpen
   }, [isOpen, race])
 
+  // Safety net: the "Résultat" tab button only renders while the race is
+  // completed — if activeTab is somehow left on 'result' when it stops being
+  // completed (e.g. an admin reset while the sheet was already open), fall
+  // back to Pronostics instead of showing content with no matching tab.
+  useEffect(() => {
+    if (currentRace && currentRace.status !== 'completed' && activeTab === 'result') {
+      setActiveTab('pronostics')
+    }
+  }, [currentRace?.status, activeTab])
+
   const fetchQualifying = useCallback(async (r, isRefresh = false) => {
     const meetingKey = r.meeting_key_2026
     if (!meetingKey) return
@@ -268,11 +278,11 @@ export default function PredictionSheet({
               </div>
             ) : (
               <>
-            {/* Tab bar */}
+            {/* Tab bar — "Résultat" only makes sense once the race is completed */}
             <div className="flex gap-0 border-b border-border shrink-0">
               {[
                 { id: 'pronostics', label: 'Pronostics' },
-                { id: 'result',    label: 'Résultat'   },
+                ...(currentRace.status === 'completed' ? [{ id: 'result', label: 'Résultat' }] : []),
                 { id: 'history',   label: 'Historique' },
               ].map(tab => (
                 <button
@@ -555,21 +565,22 @@ export default function PredictionSheet({
               {/* ── ONGLET HISTORIQUE ── */}
               {activeTab === 'history' && (
                 <div className="space-y-5">
-                  {/* 2025 edition */}
+                  {/* Previous-season edition — label built from the stored
+                      `year` field, never a hardcoded year in the JSX */}
                   {currentRace.name === 'Espagne (Madrid)' ? (
                     <div className="flex items-center gap-2 p-3 bg-surfaceHigh rounded-lg">
                       <span className="text-sm">🆕</span>
-                      <span className="text-sm text-muted">Première édition — pas de données 2025</span>
+                      <span className="text-sm text-muted">Première édition — pas de données {new Date().getFullYear() - 1}</span>
                     </div>
                   ) : raceHistory ? (
                     <div className="space-y-4">
-                      {/* Podium 2025 */}
-                      {raceHistory.podium_2025 && (
+                      {/* Podium */}
+                      {raceHistory.podium && (
                         <div>
-                          <p className="section-title">GP {currentRace.name} 2025</p>
+                          <p className="section-title">GP {currentRace.name} {raceHistory.year}</p>
                           <div className="space-y-2">
                             {POSITIONS.map((pos, i) => {
-                              const entry = raceHistory.podium_2025[pos]
+                              const entry = raceHistory.podium[pos]
                               const photoUrl = getDriverPhoto(drivers, entry?.name)
                               return (
                                 <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
@@ -590,27 +601,27 @@ export default function PredictionSheet({
                           </div>
                         </div>
                       )}
-                      {/* Pole 2025 */}
-                      {raceHistory.pole_2025 && (
+                      {/* Pole */}
+                      {raceHistory.pole && (
                         <div>
-                          <p className="section-title">Pole Position 2025</p>
+                          <p className="section-title">Pole Position {raceHistory.year}</p>
                           <div className="flex items-center gap-3 p-3 card-elevated rounded-lg">
                             <span className="text-xl">🏁</span>
                             <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
                               {(() => {
-                                const photoUrl = getDriverPhoto(drivers, raceHistory.pole_2025.name)
+                                const photoUrl = getDriverPhoto(drivers, raceHistory.pole.name)
                                 return photoUrl
                                   ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                                  : <span>{raceHistory.pole_2025.name?.[0] ?? '?'}</span>
+                                  : <span>{raceHistory.pole.name?.[0] ?? '?'}</span>
                               })()}
                             </div>
                             <div className="flex-1">
-                              <p className="font-bold leading-tight">{raceHistory.pole_2025.name}</p>
-                              <p className="text-[10px] text-muted">{raceHistory.pole_2025.team}</p>
+                              <p className="font-bold leading-tight">{raceHistory.pole.name}</p>
+                              <p className="text-[10px] text-muted">{raceHistory.pole.team}</p>
                             </div>
-                            {raceHistory.pole_2025.lap_duration && (
+                            {raceHistory.pole.lap_duration && (
                               <span className="text-xs font-bold text-accent">
-                                {raceHistory.pole_2025.lap_duration}
+                                {raceHistory.pole.lap_duration}
                               </span>
                             )}
                           </div>
@@ -620,16 +631,6 @@ export default function PredictionSheet({
                   ) : (
                     <p className="text-sm text-muted p-3">Données historiques non disponibles</p>
                   )}
-
-                  {/* Barème */}
-                  <div className="card-elevated rounded-xl p-4 space-y-1.5">
-                    <p className="section-title">Barème de points</p>
-                    <div className="flex justify-between text-xs"><span className="text-muted">Position exacte</span><span className="text-green-400 font-bold">+10 pts</span></div>
-                    <div className="flex justify-between text-xs"><span className="text-muted">Sur le podium (mauvaise pos.)</span><span className="text-yellow-400 font-bold">+3 pts</span></div>
-                    <div className="flex justify-between text-xs"><span className="text-muted">Podium parfait (bonus)</span><span className="text-gold font-bold">+5 pts</span></div>
-                    <div className="flex justify-between text-xs"><span className="text-muted">Pénalité changement tardif</span><span className="text-accent font-bold">-5 pts</span></div>
-                    <div className="flex justify-between text-xs"><span className="text-muted">Pénalité soumission tardive</span><span className="text-accent font-bold">-10 pts</span></div>
-                  </div>
                 </div>
               )}
             </div>
