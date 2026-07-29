@@ -567,7 +567,7 @@ export default function PredictionSheet({
                 <div className="space-y-5">
                   {/* Previous-season edition — label built from the stored
                       `year` field, never a hardcoded year in the JSX */}
-                  {currentRace.name === 'Espagne (Madrid)' ? (
+                  {currentRace.firstEdition ? (
                     <div className="flex items-center gap-2 p-3 bg-surfaceHigh rounded-lg">
                       <span className="text-sm">🆕</span>
                       <span className="text-sm text-muted">Première édition — pas de données {new Date().getFullYear() - 1}</span>
