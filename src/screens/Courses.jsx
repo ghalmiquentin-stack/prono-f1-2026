@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateRaceScore, calculateAllSeasonScores } from '../utils/scoring'
-import { getProfile } from '../utils/profiles'
+import { getPlayerIdentity } from '../utils/profiles'
+import { withRoundNumbers } from '../utils/races'
 import PredictionSheet from '../components/PredictionSheet'
 import Skeleton from '../components/Skeleton'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
@@ -11,20 +12,6 @@ import PlayerBadge from '../components/PlayerBadge'
 function getDriverPhoto(drivers, displayName) {
   if (!displayName || !drivers?.length) return null
   return drivers.find(d => d.last_name?.toLowerCase() === displayName.toLowerCase())?.headshot_url ?? null
-}
-
-const PLAYER_COLORS = {
-  william: '#3B82F6',
-  quentin: '#22C55E',
-  alex: '#F97316',
-  romain: '#A855F7',
-}
-
-const PLAYER_AVATARS = {
-  william: '🏎️',
-  quentin: '🏁',
-  alex: '🔥',
-  romain: '⚡',
 }
 
 const POSITIONS = ['P1', 'P2', 'P3']
@@ -59,13 +46,13 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
   const loading = racesLoading || predsLoading
 
   const sortedRaces = useMemo(() =>
-    [...races].sort((a, b) => a.id - b.id),
+    withRoundNumbers([...races].sort((a, b) => a.id - b.id)),
     [races]
   )
 
   const filteredRaces = useMemo(() => {
     if (filter === 'upcoming') return sortedRaces.filter(r => r.status === 'upcoming')
-    if (filter === 'completed') return sortedRaces.filter(r => r.status === 'completed')
+    if (filter === 'completed') return sortedRaces.filter(r => r.status === 'completed' || r.status === 'cancelled')
     return sortedRaces
   }, [sortedRaces, filter])
 
@@ -95,11 +82,15 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
     setSelectedRace(null)
   }
 
+  // Sorted so the index-based fallback color/avatar (only used when a
+  // player hasn't set up their own profile yet) stays stable and consistent
+  // with the same player's fallback identity on Stats/PredictionSheet.
+  const playerIds = useMemo(() => [...players].map(p => p.id).sort(), [players])
   const currentPlayerDoc = players.find(p => p.id === currentPlayerId)
-  const currentIdentity = getProfile(profiles, currentPlayerDoc)
-  const playerColor = currentIdentity?.color ?? PLAYER_COLORS[currentPlayerId] ?? '#fff'
-  const playerAvatar = currentIdentity?.avatar ?? PLAYER_AVATARS[currentPlayerId] ?? '🏎️'
-  const playerDisplayName = currentIdentity?.displayName ?? currentPlayerId
+  const currentIdentity = getPlayerIdentity(profiles, currentPlayerDoc, Math.max(0, playerIds.indexOf(currentPlayerId)))
+  const playerColor = currentIdentity.color
+  const playerAvatar = currentIdentity.avatar
+  const playerDisplayName = currentIdentity.displayName
 
   const currentPlayerTotal = useMemo(() => {
     if (!players.length) return 0
@@ -147,6 +138,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
         ) : (
           filteredRaces.map(race => {
             const isCompleted = race.status === 'completed'
+            const isCancelled = race.status === 'cancelled'
             const myPred = getMyPrediction(race.id)
             const myPens = getMyPenalties(race.id)
             const myScoreData = isCompleted ? getMyScoreData(race) : null
@@ -160,13 +152,15 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
               >
                 {/* ── Top row ── */}
                 <div className="flex items-center gap-3">
-                  {/* Race number */}
+                  {/* Race number — display round, decoupled from the technical id */}
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
-                    isCompleted
+                    isCancelled
+                      ? 'bg-red-500/20 text-red-400'
+                      : isCompleted
                       ? 'bg-green-500/20 text-green-400'
                       : 'bg-accent/20 text-accent'
                   }`}>
-                    {race.id}
+                    {race.round}
                   </div>
 
                   {/* Name + meta */}
@@ -174,7 +168,11 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xl leading-none">{race.flag}</span>
                       <span className="font-bold text-sm truncate">GP {race.name}</span>
-                      {isCompleted && (
+                      {isCancelled ? (
+                        <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-bold shrink-0">
+                          Annulé
+                        </span>
+                      ) : isCompleted && (
                         <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-bold shrink-0">
                           ✓ Terminé
                         </span>
@@ -190,7 +188,9 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
 
                   {/* Right: score or prono status */}
                   <div className="flex flex-col items-end gap-0.5 shrink-0">
-                    {isCompleted ? (
+                    {isCancelled ? (
+                      <span className="text-xs text-muted">—</span>
+                    ) : isCompleted ? (
                       myScoreData !== null ? (
                         <>
                           <span className="font-black text-base leading-tight" style={{ color: playerColor }}>

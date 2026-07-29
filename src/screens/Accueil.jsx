@@ -3,11 +3,11 @@ import { Pencil, Clock } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, useDocument, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
-import { getTeamColor, getDriverTeam } from '../data/drivers'
+import { getTeamColor } from '../data/drivers'
 import { getProfile } from '../utils/profiles'
 import { hasRaceStarted } from '../utils/races'
 import { getModificationCount } from '../utils/predictions'
-import { getPenaltyAmount } from '../utils/penalties'
+import { summarizePenalties } from '../utils/penalties'
 import Countdown from '../components/Countdown'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import PlayerBadge from '../components/PlayerBadge'
@@ -32,7 +32,6 @@ const PLAYER_AVATARS_FALLBACK = {
 
 const POSITIONS = ['P1', 'P2', 'P3']
 const POS_COLOR = { P1: 'text-gold', P2: 'text-silver', P3: 'text-bronze' }
-const POS_BG    = { P1: 'bg-gold',   P2: 'bg-silver',   P3: 'bg-bronze'   }
 
 // Dense ranking: two 🥈 → next is 🥉 (no gap)
 function rankWithTies(sorted) {
@@ -93,6 +92,7 @@ function formatPredTime(ts) {
 export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId, addToast }) {
   const { user } = useAuth()
   const [predictionSheetOpen, setPredictionSheetOpen] = useState(false)
+  const [selectedRace, setSelectedRace] = useState(null)
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
   const { data: players, loading: playersLoading } = useCollection(user ? 'players' : null, leagueConstraint)
   const { data: profiles } = useCollection(user ? 'profiles' : null)
@@ -135,6 +135,13 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
     [sortedRaces]
   )
 
+  // Races still to come — excludes cancelled GPs, which will never be run
+  // and shouldn't inflate the "restantes" count.
+  const remainingRacesCount = useMemo(() =>
+    sortedRaces.filter(r => r.status === 'upcoming').length,
+    [sortedRaces]
+  )
+
   const lastRace = useMemo(() =>
     completedRaces[completedRaces.length - 1] ?? null,
     [completedRaces]
@@ -151,6 +158,21 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
     standings.find(p => p.id === currentPlayerId),
     [standings, currentPlayerId]
   )
+
+  // Players ranked by points scored on the last race specifically (not the
+  // cumulative season total) — reuses the per-race breakdown already
+  // computed by calculateAllSeasonScores (standings[].raceScores), so the
+  // "Dernière course" card stays consistent with Classement/Stats instead
+  // of recomputing scores a different way.
+  const lastRaceRanking = useMemo(() => {
+    if (!lastRace) return []
+    return standings
+      .map(player => ({
+        ...player,
+        raceScore: player.raceScores.find(rs => rs.raceId === lastRace.id) ?? null,
+      }))
+      .sort((a, b) => (b.raceScore?.net ?? -Infinity) - (a.raceScore?.net ?? -Infinity))
+  }, [standings, lastRace])
 
   const myPrediction = useMemo(() => {
     if (!nextRace) return null
@@ -208,15 +230,11 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
       </div>
     )
 
-    // Real count/sum of currently-existing "change" penalties for this
-    // prediction — not modificationCount or a theoretical count × configured
+    // Real, current penalties for this prediction (modifications + late
+    // submission) — not modificationCount or a theoretical count × configured
     // amount, so an admin deletion is reflected immediately and the
-    // displayed count stays consistent with the displayed points.
-    const changePenalties = penalties.filter(
-      p => p.playerId === player.id && p.raceId === nextRace.id && p.type === 'change'
-    )
-    const realModCount = changePenalties.length
-    const modPenaltyTotal = changePenalties.reduce((sum, p) => sum + getPenaltyAmount(p), 0)
+    // displayed label stays consistent with the displayed points.
+    const penaltySummary = summarizePenalties(penalties, player.id, nextRace.id)
 
     return (
       <div key={player.id} className="card p-3">
@@ -226,14 +244,14 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             {displayName}
             {mine && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
           </span>
-          {realModCount > 0 && (
-            <span className="text-xs text-red-400 font-bold">
-              {realModCount} modif.{modPenaltyTotal > 0 ? ` · -${modPenaltyTotal} pts` : ''}
+          {penaltySummary.label && (
+            <span className="text-xs text-red-400 font-bold text-right">
+              {penaltySummary.label}
             </span>
           )}
           {canEdit && (
             <button
-              onClick={() => setPredictionSheetOpen(true)}
+              onClick={() => openRaceSheet(nextRace)}
               className="p-1 rounded-lg text-muted hover:text-white transition-colors"
               aria-label="Modifier mon pronostic"
             >
@@ -277,6 +295,13 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
         )}
       </div>
     )
+  }
+
+  // Opens the shared race detail modal (same one used from Courses) for a
+  // given race — defaults to its "Résultat" tab when the race is completed.
+  const openRaceSheet = (race) => {
+    setSelectedRace(race)
+    setPredictionSheetOpen(true)
   }
 
   // Helper: get player data (color, avatar, displayName) from profiles/{authUid} with fallbacks
@@ -379,7 +404,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                     <span className="text-sm text-accent font-semibold">Pas encore de pronostic</span>
                   </div>
                   <button
-                    onClick={() => setPredictionSheetOpen(true)}
+                    onClick={() => openRaceSheet(nextRace)}
                     className="text-xs bg-accent text-white font-bold px-3 py-1.5 rounded-lg"
                   >
                     Pronostiquer →
@@ -440,7 +465,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             {completedRaces.length > 0 && (
               <p className="text-xs text-muted mt-3 text-center">
                 {completedRaces.length} course{completedRaces.length > 1 ? 's' : ''} disputée{completedRaces.length > 1 ? 's' : ''}{' '}
-                · {sortedRaces.length - completedRaces.length} restante{sortedRaces.length - completedRaces.length > 1 ? 's' : ''}
+                · {remainingRacesCount} restante{remainingRacesCount > 1 ? 's' : ''}
               </p>
             )}
           </div>
@@ -490,7 +515,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           )
         )}
 
-        {/* ── 4. Dernière course ── résultat officiel */}
+        {/* ── 4. Dernière course ── résultat officiel + points de chacun */}
         {loading ? (
           <SkeletonCard />
         ) : lastRace?.result ? (
@@ -510,42 +535,74 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                 </p>
               </div>
             </div>
-            <div className="mt-4 space-y-2">
+
+            {/* Podium officiel — version compacte, sans photo ni cercle */}
+            <div className="grid grid-cols-3 gap-2 mt-4">
               {POSITIONS.map((pos, i) => {
                 const driverName = lastRace.result[pos]
-                const photoUrl   = getDriverPhoto(drivers, driverName)
                 return (
-                  <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
-                    <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>
-                      {i + 1}
-                    </div>
-                    <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                      {photoUrl
-                        ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                        : <span>{driverName?.[0] ?? '?'}</span>
-                      }
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-bold leading-tight">{driverName}</p>
-                      <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
-                    </div>
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: getTeamColor(driverName) }}
-                    />
+                  <div key={pos} className="flex flex-col items-center gap-1 p-2 card-elevated rounded-lg">
+                    <span className={`text-xs font-bold uppercase tracking-wide ${POS_COLOR[pos]}`}>
+                      {rankEmoji(i + 1)} {pos}
+                    </span>
+                    <span className="text-sm font-bold text-center leading-tight truncate w-full">
+                      {driverName}
+                    </span>
                   </div>
                 )
               })}
             </div>
+
+            {/* Points marqués par chaque joueur de la ligue sur ce GP précis */}
+            <div className="mt-4 pt-4 border-t border-border space-y-1.5">
+              <p className="text-[10px] text-muted uppercase tracking-wide font-bold mb-1">Points marqués sur ce GP</p>
+              {lastRaceRanking.map(player => {
+                const isCurrent = player.id === currentPlayerId
+                const identity = getProfile(profiles, player)
+                const color = String(identity?.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
+                const avatar = String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
+                const displayName = String(identity?.displayName ?? player.id)
+                const rs = player.raceScore
+                return (
+                  <div
+                    key={player.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg ${isCurrent ? 'bg-surfaceHigh' : ''}`}
+                  >
+                    <span className="text-xl leading-none">{avatar}</span>
+                    <span className={`flex-1 font-bold text-sm truncate ${isCurrent ? 'text-white' : 'text-white/80'}`}>
+                      {displayName}
+                      {isCurrent && <span className="text-xs text-muted ml-1">(vous)</span>}
+                    </span>
+                    {rs?.net != null ? (
+                      <div className="flex items-center gap-2 shrink-0">
+                        {rs.penalty > 0 && (
+                          <span className="text-xs text-accent font-bold">-{rs.penalty} pén.</span>
+                        )}
+                        <span className="font-black text-sm" style={{ color }}>{rs.net} pts</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted shrink-0">Pas de prono</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            <button
+              onClick={() => openRaceSheet(lastRace)}
+              className="btn-primary w-full mt-4 text-sm"
+            >
+              Voir le podium et les pronostics →
+            </button>
           </div>
         ) : null}
       </div>
 
       <PredictionSheet
         isOpen={predictionSheetOpen}
-        race={nextRace}
+        race={selectedRace}
         races={races}
-        onClose={() => setPredictionSheetOpen(false)}
+        onClose={() => { setPredictionSheetOpen(false); setSelectedRace(null) }}
         currentPlayerId={currentPlayerId}
         activeLeagueId={activeLeagueId}
         addToast={addToast}

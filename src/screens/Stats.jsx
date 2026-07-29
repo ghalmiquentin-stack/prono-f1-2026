@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
-import { getProfile } from '../utils/profiles'
+import { getProfile, getPlayerIdentity } from '../utils/profiles'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import PlayerBadge from '../components/PlayerBadge'
 import {
@@ -10,22 +10,6 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import Skeleton from '../components/Skeleton'
-
-const PLAYER_COLORS = {
-  william: '#3B82F6',
-  quentin: '#22C55E',
-  alex: '#F97316',
-  romain: '#A855F7',
-}
-
-const PLAYER_AVATARS = {
-  william: '🏎️',
-  quentin: '🏁',
-  alex: '🔥',
-  romain: '⚡',
-}
-
-const PLAYERS_ORDER = ['william', 'quentin', 'alex', 'romain']
 
 // Team colors for 2026 grid
 const DRIVER_TEAMS = {
@@ -102,10 +86,19 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
       .find(p => p.id === currentPlayerId)?.total ?? 0
   }, [players, sortedRaces, predictions, penalties, currentPlayerId])
 
+  // Real roster of the active league (already scoped via leagueConstraint
+  // above), sorted deterministically so per-player colors/avatars stay
+  // stable across renders — not a fixed table of hardcoded player IDs from
+  // the original single-league era.
+  const playerIds = useMemo(
+    () => [...players].map(p => p.id).sort(),
+    [players]
+  )
+
   const playerStats = useMemo(() => {
     if (!players.length) return []
     const allScores = calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
-    return PLAYERS_ORDER.map(pid => {
+    return playerIds.map((pid, index) => {
       const scored = allScores.find(p => p.id === pid)
       if (!scored) return null
       const { total, raceScores, streakBonus } = scored
@@ -127,26 +120,26 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
         return { raceId: rs.raceId, name: rs.raceName, cumulative }
       })
 
-      const identity = getProfile(profiles, scored)
+      const identity = getPlayerIdentity(profiles, scored, index)
 
       return {
         ...scored,
-        color: identity?.color,
-        avatar: identity?.avatar,
-        displayName: identity?.displayName,
+        color: identity.color,
+        avatar: identity.avatar,
+        displayName: identity.displayName,
         total, raceScores, streakBonus,
         racesPlayed, avgScore, perfectPodiums, bestScore,
         totalPenalties, exactHits, podiumHits, cumulativeScores,
       }
     }).filter(Boolean)
-  }, [players, profiles, races, predictions, penalties, sortedRaces])
+  }, [players, playerIds, profiles, races, predictions, penalties, sortedRaces])
 
   // Cumulative chart data — real Y values + horizontal pixel offsets for ties
   const cumulativeChartData = useMemo(() => {
     return completedRaces.map(race => {
       // Collect real values
       const raw = {}
-      PLAYERS_ORDER.forEach(pid => {
+      playerIds.forEach(pid => {
         const player = playerStats.find(p => p.id === pid)
         const cs = player?.cumulativeScores?.find(c => c.raceId === race.id)
         raw[pid] = cs?.cumulative ?? 0
@@ -154,7 +147,7 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
 
       // Group by value to detect ties
       const groups = {}
-      PLAYERS_ORDER.forEach(pid => {
+      playerIds.forEach(pid => {
         const v = raw[pid]
         if (!groups[v]) groups[v] = []
         groups[v].push(pid)
@@ -162,7 +155,7 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
 
       // Real Y values + per-player horizontal pixel offset stored in entry
       const entry = { name: `GP ${race.name}` }
-      PLAYERS_ORDER.forEach(pid => {
+      playerIds.forEach(pid => {
         entry[pid] = raw[pid]
         const group = groups[raw[pid]]
         if (group.length > 1) {
@@ -181,14 +174,14 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
   const raceScoresChartData = useMemo(() => {
     return completedRaces.map(race => {
       const entry = { name: `GP ${race.name}` }
-      PLAYERS_ORDER.forEach(pid => {
+      playerIds.forEach(pid => {
         const player = playerStats.find(p => p.id === pid)
         const rs = player?.raceScores?.find(r => r.raceId === race.id)
         entry[pid] = rs?.net ?? 0
       })
       return entry
     })
-  }, [completedRaces, playerStats])
+  }, [completedRaces, playerIds, playerStats])
 
   // Driver prediction stats — per-player prediction counts for tooltip
   const driverPredictionStats = useMemo(() => {
@@ -199,7 +192,7 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
 
     completedRaces.forEach(race => {
       if (!race.result) return
-      PLAYERS_ORDER.forEach(pid => {
+      playerIds.forEach(pid => {
         const pred = predictions.find(p => p.playerId === pid && p.raceId === race.id)
         if (!pred) return
         ;['P1', 'P2', 'P3'].forEach(pos => {
@@ -230,7 +223,7 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
       })
       .sort((a, b) => b.count - a.count)
       .slice(0, 8)
-  }, [completedRaces, predictions])
+  }, [completedRaces, playerIds, predictions])
 
   const maxDriverCount = driverPredictionStats[0]?.count || 1
   const [activeDriver, setActiveDriver] = useState(null)
@@ -276,8 +269,8 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
         <div className="grid grid-cols-2 gap-3">
           {playerStats.sort((a, b) => b.total - a.total).map((player, idx) => {
             const isCurrent = player.id === currentPlayerId
-            const color = String(player.color ?? PLAYER_COLORS[player.id])
-            const avatar = String(player.avatar ?? PLAYER_AVATARS[player.id])
+            const color = String(player.color)
+            const avatar = String(player.avatar)
             return (
               <div
                 key={player.id}
@@ -346,10 +339,10 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
                 />
                 <YAxis tick={{ fill: '#6B6B8A', fontSize: 10 }} domain={['auto', 'auto']} />
                 <Tooltip content={<CustomTooltip />} />
-                {PLAYERS_ORDER.map(pid => {
+                {playerIds.map(pid => {
                   const player = playerStats.find(p => p.id === pid)
-                  const color = String(player?.color ?? PLAYER_COLORS[pid])
-                  const name = String(player?.displayName ?? pid.charAt(0).toUpperCase() + pid.slice(1))
+                  const color = String(player?.color)
+                  const name = String(player?.displayName)
                   return (
                     <Line
                       key={pid}
@@ -393,7 +386,7 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
 
       {/* Per-race scores bar chart — Recharts BarChart */}
       {raceScoresChartData.length > 0 && (() => {
-        const allVals = raceScoresChartData.flatMap(e => PLAYERS_ORDER.map(pid => e[pid] ?? 0))
+        const allVals = raceScoresChartData.flatMap(e => playerIds.map(pid => e[pid] ?? 0))
         const minVal = Math.min(0, ...allVals)
         const maxVal = Math.max(0, ...allVals)
         const domainMin = minVal < 0 ? minVal - 2 : 0
@@ -421,9 +414,9 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
                   />
                   <Tooltip content={<CustomTooltip />} />
                   <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" />
-                  {PLAYERS_ORDER.map(pid => {
+                  {playerIds.map(pid => {
                     const player = playerStats.find(p => p.id === pid)
-                    const color = String(player?.color ?? PLAYER_COLORS[pid])
+                    const color = String(player?.color)
                     return (
                       <Bar
                         key={pid}
@@ -499,10 +492,10 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
                   <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-surface border border-border rounded-lg p-3 shadow-xl">
                     <p className="text-[10px] text-muted font-bold uppercase tracking-wide mb-2">Pronostiqué par</p>
                     <div className="space-y-1.5">
-                      {PLAYERS_ORDER.filter(pid => predictorCounts[pid]).map(pid => {
+                      {playerIds.filter(pid => predictorCounts[pid]).map(pid => {
                         const p = playerStats.find(ps => ps.id === pid)
-                        const avatar = String(p?.avatar ?? PLAYER_AVATARS[pid])
-                        const name = String(p?.displayName ?? pid)
+                        const avatar = String(p?.avatar)
+                        const name = String(p?.displayName)
                         const times = predictorCounts[pid]
                         return (
                           <div key={pid} className="flex items-center gap-2 text-sm">

@@ -1,3 +1,5 @@
+import { PROFILE_COLORS, PROFILE_AVATARS } from '../data/profileOptions'
+
 // Same neutral identity used when a deleted account's profile doc is
 // anonymized (see MonProfil.jsx) — kept in sync so both paths render the
 // same "gone" look.
@@ -26,4 +28,21 @@ export function getProfile(profiles, player) {
   }
 
   return null
+}
+
+/**
+ * Same as getProfile, but always returns a usable identity: any player who
+ * hasn't set up their own color/avatar yet (or has no profile doc at all)
+ * gets one deterministically assigned from the shared picker palette by
+ * their position in the roster — not a fixed table of hardcoded player IDs
+ * (that only ever matched the original single-league roster).
+ */
+export function getPlayerIdentity(profiles, player, index = 0) {
+  const identity = getProfile(profiles, player)
+  if (identity) return identity
+  return {
+    displayName: player?.id ?? '',
+    color: PROFILE_COLORS[index % PROFILE_COLORS.length],
+    avatar: PROFILE_AVATARS[index % PROFILE_AVATARS.length],
+  }
 }

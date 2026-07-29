@@ -59,6 +59,13 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
     [sortedRaces]
   )
 
+  // Races still to come — excludes cancelled GPs, which will never be run
+  // and shouldn't inflate the "restantes" count.
+  const remainingRacesCount = useMemo(() =>
+    sortedRaces.filter(r => r.status === 'upcoming').length,
+    [sortedRaces]
+  )
+
   // Build standings — identity (color/avatar/displayName) resolved from profiles/{authUid}
   const standings = useMemo(() => {
     if (!players.length) return []
@@ -124,7 +131,7 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
         <h1 className="text-2xl font-black tracking-tight mb-1">Classement</h1>
         <p className="text-sm text-muted">
           {completedRaces.length} course{completedRaces.length !== 1 ? 's' : ''} disputée{completedRaces.length !== 1 ? 's' : ''}
-          {' '}· {sortedRaces.length - completedRaces.length} restante{sortedRaces.length - completedRaces.length !== 1 ? 's' : ''}
+          {' '}· {remainingRacesCount} restante{remainingRacesCount !== 1 ? 's' : ''}
         </p>
       </div>
 

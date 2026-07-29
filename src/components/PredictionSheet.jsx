@@ -1,26 +1,12 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useDocument, upsertDoc } from '../hooks/useFirestore'
 import { calculateRaceScore } from '../utils/scoring'
-import { getProfile } from '../utils/profiles'
+import { getPlayerIdentity } from '../utils/profiles'
 import { getModificationCount } from '../utils/predictions'
-import { getPenaltyAmount } from '../utils/penalties'
+import { summarizePenalties } from '../utils/penalties'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
 import BottomSheet from './BottomSheet'
 import Countdown from './Countdown'
-
-const PLAYER_COLORS = {
-  william: '#3B82F6',
-  quentin: '#22C55E',
-  alex: '#F97316',
-  romain: '#A855F7',
-}
-
-const PLAYER_AVATARS = {
-  william: '🏎️',
-  quentin: '🏁',
-  alex: '🔥',
-  romain: '⚡',
-}
 
 const POSITIONS = ['P1', 'P2', 'P3']
 const POS_COLOR = { P1: 'text-gold', P2: 'text-silver', P3: 'text-bronze' }
@@ -74,6 +60,12 @@ export default function PredictionSheet({
     [races, race]
   )
 
+  // Real roster of the active league (players prop is already scoped by the
+  // caller via leagueConstraint), sorted deterministically so per-player
+  // colors/avatars stay stable across renders — not a fixed list of
+  // hardcoded player IDs from the original single-league era.
+  const playerIds = useMemo(() => [...players].map(p => p.id).sort(), [players])
+
   // History document for the selected race
   const { data: raceHistory } = useDocument(
     race ? 'races_history' : null,
@@ -91,7 +83,7 @@ export default function PredictionSheet({
     if (isOpen && !prevOpenRef.current && race) {
       const existing = getMyPrediction(race.id)
       setDraftPrediction(existing?.prediction ?? { P1: null, P2: null, P3: null })
-      setActiveTab(race.status === 'completed' ? 'result' : 'pronostics')
+      setActiveTab(race.status === 'upcoming' ? 'pronostics' : 'result')
       setQualError(null)
     }
     prevOpenRef.current = isOpen
@@ -266,6 +258,15 @@ export default function PredictionSheet({
               </div>
             </div>
 
+            {currentRace.status === 'cancelled' ? (
+              /* ── Grand Prix annulé ── pas d'onglets, pas de podium/pronostics */
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
+                <span className="text-4xl">🚫</span>
+                <p className="font-bold text-base">Ce Grand Prix a été annulé.</p>
+                <p className="text-xs text-muted">Aucun pronostic ni résultat ne sera comptabilisé pour cette course.</p>
+              </div>
+            ) : (
+              <>
             {/* Tab bar */}
             <div className="flex gap-0 border-b border-border shrink-0">
               {[
@@ -294,12 +295,12 @@ export default function PredictionSheet({
               {activeTab === 'pronostics' && currentRace.status === 'completed' && currentRace.result && (
                 <div className="space-y-3">
                   <p className="section-title">Pronostics des joueurs</p>
-                  {(['william', 'quentin', 'alex', 'romain']).map(pid => {
+                  {playerIds.map((pid, index) => {
                     const playerData = players.find(p => p.id === pid)
-                    const identity = getProfile(profiles, playerData)
-                    const pidColor  = String(identity?.color  ?? PLAYER_COLORS[pid]  ?? '#fff')
-                    const pidAvatar = String(identity?.avatar ?? PLAYER_AVATARS[pid] ?? '🏎️')
-                    const pidName   = String(identity?.displayName ?? pid)
+                    const identity = getPlayerIdentity(profiles, playerData, index)
+                    const pidColor  = String(identity.color)
+                    const pidAvatar = String(identity.avatar)
+                    const pidName   = String(identity.displayName)
                     const pred = predictions.find(p => p.playerId === pid && p.raceId === currentRace.id)
                     const pens = penalties.filter(p => p.playerId === pid && p.raceId === currentRace.id)
                     if (!pred) return (
@@ -365,16 +366,13 @@ export default function PredictionSheet({
 
               {activeTab === 'pronostics' && currentRace.status !== 'completed' && (() => {
                 const existingPred = getMyPrediction(currentRace.id)
-                // Real count/sum of currently-existing "change" penalties for
-                // this prediction — not modificationCount or a theoretical
+                // Real, current penalties for this prediction (modifications +
+                // late submission) — not modificationCount or a theoretical
                 // count × amount, so an admin deletion is reflected
                 // immediately and stays consistent between the count and
                 // the points shown.
-                const changePenalties = penalties.filter(
-                  p => p.playerId === currentPlayerId && p.raceId === currentRace.id && p.type === 'change'
-                )
-                const realModCount = changePenalties.length
-                const modPenaltyTotal = changePenalties.reduce((sum, p) => sum + getPenaltyAmount(p), 0)
+                const { changeCount, lateCount, changeTotal, lateTotal, total: penaltyTotal } =
+                  summarizePenalties(penalties, currentPlayerId, currentRace.id)
                 return (
                   <div className="space-y-5">
                     <div>
@@ -384,8 +382,12 @@ export default function PredictionSheet({
                           <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                             <span className="text-sm">⚠️</span>
                             <p className="text-xs text-yellow-400 font-bold">
-                              {realModCount > 0
-                                ? <>Déjà {realModCount} modification{realModCount > 1 ? 's' : ''} · -{modPenaltyTotal} pts.{' '}Une nouvelle modification ajoutera -{modPenaltyAmount} pts.</>
+                              {changeCount > 0 && lateCount > 0
+                                ? <>Déjà {changeCount} modification{changeCount > 1 ? 's' : ''} (-{changeTotal} pts) + pénalité tardive (-{lateTotal} pts) · -{penaltyTotal} pts au total.{' '}Une nouvelle modification ajoutera -{modPenaltyAmount} pts.</>
+                                : lateCount > 0
+                                ? <>Une pénalité tardive de -{penaltyTotal} pts a déjà été appliquée.{' '}Une nouvelle modification ajoutera -{modPenaltyAmount} pts.</>
+                                : changeCount > 0
+                                ? <>Déjà {changeCount} modification{changeCount > 1 ? 's' : ''} · -{penaltyTotal} pts.{' '}Une nouvelle modification ajoutera -{modPenaltyAmount} pts.</>
                                 : <>Chaque modification vous coûtera -{modPenaltyAmount} pts.</>
                               }
                             </p>
@@ -630,6 +632,8 @@ export default function PredictionSheet({
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
         )}
       </BottomSheet>

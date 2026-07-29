@@ -5,7 +5,7 @@ import { useCollection, useDocument, where, upsertDoc, deleteDocument } from '..
 import { getProfile } from '../utils/profiles'
 import { parseAmount } from '../utils/leagues'
 import { hasRaceStarted } from '../utils/races'
-import { getPenaltyAmount } from '../utils/penalties'
+import { getPenaltyAmount, summarizePenalties } from '../utils/penalties'
 import LeagueRulesFields from '../components/LeagueRulesFields'
 import BottomSheet from '../components/BottomSheet'
 import LeaveLeagueSheet from '../components/LeaveLeagueSheet'
@@ -416,9 +416,10 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                         <span>{race.flag}</span>
                         <p className="font-bold text-sm">GP {race.name}</p>
                         <span className={`text-xs font-bold ml-auto px-2 py-0.5 rounded-full ${
+                          race.status === 'cancelled' ? 'bg-red-500/20 text-red-400' :
                           race.status === 'completed' ? 'bg-muted/20 text-muted' : 'bg-accent/20 text-accent'
                         }`}>
-                          {race.status === 'completed' ? 'Terminé' : 'À venir'}
+                          {race.status === 'cancelled' ? 'Annulé' : race.status === 'completed' ? 'Terminé' : 'À venir'}
                         </span>
                       </div>
                       <div className="space-y-2">
@@ -435,6 +436,7 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                               </span>
                             </div>
                           )
+                          const penaltySummary = summarizePenalties(penalties, player.id, race.id)
                           return (
                             <div key={player.id} className="flex items-center gap-2 py-1">
                               <span className="text-sm">{avatar}</span>
@@ -443,8 +445,8 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                               </span>
                               {hideActive ? (
                                 <span className="text-xs text-muted text-right">
-                                  Soumis {formatSubmittedDate(pred.submittedAt)} ·{' '}
-                                  {penalties.filter(p => p.playerId === player.id && p.raceId === race.id && p.type === 'change').length} modif.
+                                  Soumis {formatSubmittedDate(pred.submittedAt)}
+                                  {penaltySummary.label ? <> · {penaltySummary.label}</> : null}
                                 </span>
                               ) : (
                                 <span className="text-xs text-muted">

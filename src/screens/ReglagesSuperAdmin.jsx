@@ -277,22 +277,28 @@ export default function ReglagesSuperAdmin({ addToast }) {
                     </p>
                   )}
                 </div>
-                <div className="flex flex-col gap-1">
-                  <button
-                    onClick={() => openResultSheet(race)}
-                    className="text-xs bg-accent/20 text-accent font-bold px-3 py-1.5 rounded-lg"
-                  >
-                    {race.result ? 'Modifier' : 'Résultat'}
-                  </button>
-                  {race.result && (
+                {race.status === 'cancelled' ? (
+                  <span className="text-xs bg-red-500/20 text-red-400 font-bold px-3 py-1.5 rounded-lg">
+                    Annulé
+                  </span>
+                ) : (
+                  <div className="flex flex-col gap-1">
                     <button
-                      onClick={() => resetRaceResult(race)}
-                      className="text-xs text-muted font-bold px-3 py-1.5 rounded-lg border border-border"
+                      onClick={() => openResultSheet(race)}
+                      className="text-xs bg-accent/20 text-accent font-bold px-3 py-1.5 rounded-lg"
                     >
-                      Reset
+                      {race.result ? 'Modifier' : 'Résultat'}
                     </button>
-                  )}
-                </div>
+                    {race.result && (
+                      <button
+                        onClick={() => resetRaceResult(race)}
+                        className="text-xs text-muted font-bold px-3 py-1.5 rounded-lg border border-border"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
