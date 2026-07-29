@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateRaceScore, calculateAllSeasonScores } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
-import { withRoundNumbers } from '../utils/races'
+import { withRoundNumbers, formatRaceLocalTime } from '../utils/races'
 import PredictionSheet from '../components/PredictionSheet'
 import Skeleton from '../components/Skeleton'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
@@ -180,8 +180,8 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                     </div>
                     <p className="text-xs text-muted mt-0.5">
                       {race.city} · {formatDate(race.date)}
-                      {race.raceTime && (
-                        <> · <span className="text-white/70">{race.raceTime}</span></>
+                      {formatRaceLocalTime(race) && (
+                        <> · <span className="text-white/70">{formatRaceLocalTime(race)}</span></>
                       )}
                     </p>
                   </div>

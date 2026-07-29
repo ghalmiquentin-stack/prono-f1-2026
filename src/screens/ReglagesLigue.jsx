@@ -23,12 +23,14 @@ function formatSubmittedDate(ts) {
 // card (see formatPredTime there), applied to a single short date+time —
 // no dual-timezone flags here, this is for the compact admin penalty row.
 // Returns null (not '—') when absent, so the caller can omit it entirely.
+// No explicit timeZone on either part — resolves to the viewer's own
+// browser timezone, same as the date part right next to it.
 function formatPenaltyDate(ts) {
   if (!ts) return null
   const date = ts?.toDate?.() ?? new Date(ts)
   const datePart = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   const parts = new Intl.DateTimeFormat('fr-FR', {
-    timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false,
+    hour: '2-digit', minute: '2-digit', hour12: false,
   }).formatToParts(date)
   const h = parts.find(p => p.type === 'hour')?.value ?? '00'
   const m = parts.find(p => p.type === 'minute')?.value ?? '00'

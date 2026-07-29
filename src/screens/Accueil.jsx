@@ -5,7 +5,7 @@ import { useCollection, useDocument, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getTeamColor } from '../data/drivers'
 import { getProfile } from '../utils/profiles'
-import { hasRaceStarted } from '../utils/races'
+import { hasRaceStarted, formatRaceLocalTime } from '../utils/races'
 import { getModificationCount } from '../utils/predictions'
 import { summarizePenalties } from '../utils/penalties'
 import Countdown from '../components/Countdown'
@@ -49,19 +49,19 @@ function rankEmoji(rank) {
   return `${rank}`
 }
 
-// Format a UTC date string in a given IANA timezone as "HH:MM"
-function formatTimeInTz(isoString, tz) {
+// Format a UTC date string as "HH:MM" — no explicit timeZone, so this
+// resolves to whichever timezone the viewer's own browser is set to.
+function formatLocalTime(isoString) {
   return new Date(isoString).toLocaleTimeString('fr-FR', {
-    timeZone: tz,
     hour: '2-digit',
     minute: '2-digit',
   })
 }
 
-// Get timezone abbreviation (CET, CEST, GST…)
-function getTzAbbr(isoString, tz) {
+// Viewer's own timezone abbreviation (CET, EST, JST…) — same no-timeZone-
+// option principle as formatLocalTime.
+function getLocalTzAbbr(isoString) {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
     timeZoneName: 'short',
   }).formatToParts(new Date(isoString))
   return parts.find(p => p.type === 'timeZoneName')?.value ?? ''
@@ -72,21 +72,20 @@ function getDriverPhoto(drivers, displayName) {
   return drivers.find(d => d.last_name?.toLowerCase() === displayName.toLowerCase())?.headshot_url ?? null
 }
 
+// No explicit timeZone on either part — resolves to the viewer's own browser
+// timezone rather than a fixed France/Dubai pair.
 function formatPredTime(ts) {
   if (!ts) return null
   const date = ts?.toDate?.() ?? new Date(ts)
   const datePart = date.toLocaleDateString('fr-FR', {
-    timeZone: 'Europe/Paris', weekday: 'short', day: 'numeric', month: 'short',
+    weekday: 'short', day: 'numeric', month: 'short',
   })
-  const timeInTz = (tz) => {
-    const parts = new Intl.DateTimeFormat('fr-FR', {
-      timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
-    }).formatToParts(date)
-    const h = parts.find(p => p.type === 'hour')?.value ?? '00'
-    const m = parts.find(p => p.type === 'minute')?.value ?? '00'
-    return `${h}h${m}`
-  }
-  return `${datePart} à ${timeInTz('Europe/Paris')} 🇫🇷 / ${timeInTz('Asia/Dubai')} 🇦🇪`
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(date)
+  const h = parts.find(p => p.type === 'hour')?.value ?? '00'
+  const m = parts.find(p => p.type === 'minute')?.value ?? '00'
+  return `${datePart} à ${h}h${m}`
 }
 
 export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId, addToast }) {
@@ -184,13 +183,11 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
     ? `${nextRace.date}T${nextRace.raceTimeUTC ?? '12:00'}:00Z`
     : null
 
-  const localTimes = useMemo(() => {
+  const localTime = useMemo(() => {
     if (!raceUtcTime) return null
     return {
-      paris: formatTimeInTz(raceUtcTime, 'Europe/Paris'),
-      parisTz: getTzAbbr(raceUtcTime, 'Europe/Paris'),
-      dubai: formatTimeInTz(raceUtcTime, 'Asia/Dubai'),
-      dubaiTz: getTzAbbr(raceUtcTime, 'Asia/Dubai'),
+      time: formatLocalTime(raceUtcTime),
+      tzAbbr: getLocalTzAbbr(raceUtcTime),
     }
   }, [raceUtcTime])
 
@@ -376,16 +373,13 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             {/* Full countdown J / HH / MM / SEC */}
             <Countdown targetDate={raceUtcTime} />
 
-            {/* Timezone lines */}
-            {localTimes && (
-              <div className="flex justify-center gap-8 mt-3 text-xs">
-                <span className="text-muted">
-                  🇫🇷 <span className="text-white font-bold">{localTimes.paris}</span>{' '}
-                  <span className="text-[10px] text-muted">{localTimes.parisTz}</span>
-                </span>
-                <span className="text-muted">
-                  🇦🇪 <span className="text-white font-bold">{localTimes.dubai}</span>{' '}
-                  <span className="text-[10px] text-muted">{localTimes.dubaiTz}</span>
+            {/* Local start time — viewer's own timezone, same instant as the countdown */}
+            {localTime && (
+              <div className="flex justify-center mt-3 text-xs">
+                <span className="text-muted flex items-center gap-1.5">
+                  <Clock size={12} />
+                  <span className="text-white font-bold">{localTime.time}</span>
+                  <span className="text-[10px] text-muted">{localTime.tzAbbr}</span>
                 </span>
               </div>
             )}
@@ -529,8 +523,8 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                   {new Date(lastRace.date + 'T00:00:00').toLocaleDateString('fr-FR', {
                     weekday: 'long', day: 'numeric', month: 'long'
                   })}
-                  {lastRace.raceTime && (
-                    <> · <span className="text-white/70">{lastRace.raceTime}</span></>
+                  {formatRaceLocalTime(lastRace) && (
+                    <> · <span className="text-white/70">{formatRaceLocalTime(lastRace)}</span></>
                   )}
                 </p>
               </div>

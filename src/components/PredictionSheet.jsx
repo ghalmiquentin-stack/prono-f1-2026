@@ -4,6 +4,7 @@ import { calculateRaceScore } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
 import { getModificationCount } from '../utils/predictions'
 import { summarizePenalties } from '../utils/penalties'
+import { formatRaceLocalTime } from '../utils/races'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
 import BottomSheet from './BottomSheet'
 import Countdown from './Countdown'
@@ -245,8 +246,8 @@ export default function PredictionSheet({
                       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
                     })}
                   </p>
-                  {currentRace.raceTime && (
-                    <p className="text-xs text-accent font-bold mt-0.5">{currentRace.raceTime}</p>
+                  {formatRaceLocalTime(currentRace) && (
+                    <p className="text-xs text-accent font-bold mt-0.5">{formatRaceLocalTime(currentRace)}</p>
                   )}
                 </div>
                 {currentRace.status === 'upcoming' && (
