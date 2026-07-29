@@ -301,7 +301,7 @@ export default function PredictionSheet({
                                 }`}
                               >
                                 <div className={`text-[9px] font-bold mb-1 ${POS_COLOR[pos]}`}>{pos}</div>
-                                <div className="w-8 h-8 rounded-full overflow-hidden mx-auto mb-1 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                                <div className="w-11 h-11 rounded-full overflow-hidden mx-auto mb-1 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
                                   {photoUrl
                                     ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
                                     : <span>{driverName?.[0] ?? '?'}</span>
@@ -368,11 +368,12 @@ export default function PredictionSheet({
                         {POSITIONS.map((pos, i) => {
                           const driver = draftPrediction[pos]
                           const teamColor = driver ? getTeamColor(driver) : null
+                          const photoUrl  = driver ? getDriverPhoto(drivers, driver) : null
                           return (
                             <button
                               key={pos}
                               onClick={() => { setActivePosition(pos); setDriverPickerOpen(true) }}
-                              className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all active:scale-[0.98] ${
+                              className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 transition-all active:scale-[0.98] ${
                                 driver ? '' : 'border-dashed border-border'
                               }`}
                               style={driver ? { borderColor: teamColor + '80', backgroundColor: teamColor + '15' } : {}}
@@ -380,6 +381,12 @@ export default function PredictionSheet({
                               <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>{i + 1}</div>
                               {driver ? (
                                 <>
+                                  <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                                    {photoUrl
+                                      ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                                      : <span>{driver?.[0] ?? '?'}</span>
+                                    }
+                                  </div>
                                   <div className="flex-1 text-left">
                                     <p className="font-bold text-sm">{driver}</p>
                                     <p className="text-xs text-muted">{getDriverTeam(driver)?.name}</p>
@@ -475,7 +482,7 @@ export default function PredictionSheet({
                                 <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
                               </div>
                               {entry?.lap_duration && (
-                                <span className="text-xs font-bold text-accent">{entry.lap_duration}</span>
+                                <span className="text-xs font-bold text-white">{entry.lap_duration}</span>
                               )}
                               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getTeamColor(driverName) }} />
                             </div>
@@ -547,7 +554,7 @@ export default function PredictionSheet({
                               <p className="text-[10px] text-muted">{raceHistory.pole.team}</p>
                             </div>
                             {raceHistory.pole.lap_duration && (
-                              <span className="text-xs font-bold text-accent">
+                              <span className="text-xs font-bold text-white">
                                 {raceHistory.pole.lap_duration}
                               </span>
                             )}
@@ -611,7 +618,7 @@ export default function PredictionSheet({
                       >
                         {/* Avatar */}
                         <div
-                          className="w-10 h-10 rounded-full overflow-hidden shrink-0 flex items-center justify-center text-xs font-bold text-white"
+                          className="w-11 h-11 rounded-full overflow-hidden shrink-0 flex items-center justify-center text-xs font-bold text-white"
                           style={{ backgroundColor: team.colour + '66' }}
                         >
                           {driver.headshot_url ? (

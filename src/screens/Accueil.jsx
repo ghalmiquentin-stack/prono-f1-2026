@@ -267,7 +267,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                 <div className="h-1" style={{ backgroundColor: teamColor ?? '#6B6B8A' }} />
                 <div className="p-2 flex flex-col items-center gap-1">
                   <div className={`text-[9px] font-bold ${POS_COLOR[pos]}`}>{pos}</div>
-                  <div className="w-9 h-9 rounded-full overflow-hidden bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted shrink-0">
+                  <div className="w-11 h-11 rounded-full overflow-hidden bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted shrink-0">
                     {photoUrl
                       ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
                       : <span>{driverName?.[0] ?? '?'}</span>
@@ -530,15 +530,22 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
               </div>
             </div>
 
-            {/* Podium officiel — version compacte, sans photo ni cercle */}
+            {/* Podium officiel — version compacte, avec petite photo */}
             <div className="grid grid-cols-3 gap-2 mt-4">
               {POSITIONS.map((pos, i) => {
                 const driverName = lastRace.result[pos]
+                const photoUrl   = getDriverPhoto(drivers, driverName)
                 return (
                   <div key={pos} className="flex flex-col items-center gap-1 p-2 card-elevated rounded-lg">
                     <span className={`text-xs font-bold uppercase tracking-wide ${POS_COLOR[pos]}`}>
                       {rankEmoji(i + 1)} {pos}
                     </span>
+                    <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
+                      {photoUrl
+                        ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                        : <span>{driverName?.[0] ?? '?'}</span>
+                      }
+                    </div>
                     <span className="text-sm font-bold text-center leading-tight truncate w-full">
                       {driverName}
                     </span>
