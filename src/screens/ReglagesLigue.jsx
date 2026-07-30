@@ -149,6 +149,14 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
   // even after the race has started (see PredictionSheet's pencil button on
   // Accueil). Default is off; the admin turns it on per-prediction here.
   const toggleManualUnlock = async (pred) => {
+    // Defense in depth — this action is only ever reachable today because
+    // MesLigues.jsx gates navigation to this screen to league admins, but
+    // that's a navigation-level guard, not a per-action one. Firestore rules
+    // also enforce isLeagueAdmin server-side; this just fails fast in the UI.
+    if (!isLeagueAdmin) {
+      addToast?.('Réservé aux administrateurs de la ligue', 'error')
+      return
+    }
     try {
       await upsertDoc('predictions', pred._id, { ...pred, manualUnlockOverride: !pred.manualUnlockOverride })
       addToast?.(
@@ -164,6 +172,11 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
 
   const addPenalty = async () => {
     if (!penaltyRaceId || !penaltyPlayerId) return
+    // Defense in depth — see toggleManualUnlock's comment above.
+    if (!isLeagueAdmin) {
+      addToast?.('Réservé aux administrateurs de la ligue', 'error')
+      return
+    }
     const id = `pen_${penaltyType}_${penaltyPlayerId}_${penaltyRaceId}_${Date.now()}`
     // Snapshot the currently configured amount so the penalty's own points
     // stay fixed even if the league's rule amount changes later.
@@ -188,6 +201,12 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
 
   const confirmRemovePenalty = async () => {
     if (!deletePenaltyTarget) return
+    // Defense in depth — see toggleManualUnlock's comment above.
+    if (!isLeagueAdmin) {
+      addToast?.('Réservé aux administrateurs de la ligue', 'error')
+      setDeletePenaltyTarget(null)
+      return
+    }
     try {
       await deleteDocument('penalties', deletePenaltyTarget)
       addToast?.('Pénalité supprimée', 'info')

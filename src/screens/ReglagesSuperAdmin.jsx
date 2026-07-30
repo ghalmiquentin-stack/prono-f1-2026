@@ -35,7 +35,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
   const [openf1ResultMsg, setOpenf1ResultMsg] = useState(null)
 
   // ── OpenF1 qualifying fetch ───────────────────────────────────────────────
-  // Writes to races/{id} (qualifying_2026, meeting_key) — super-admin only
+  // Writes to races/{id} (qualifying, meeting_key) — super-admin only
   // per firestore.rules, hence this lives here rather than in the
   // player-facing PredictionSheet modal (which only ever reads this data).
   const [openf1QualFetching, setOpenf1QualFetching] = useState(false)
@@ -52,7 +52,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
   )
 
   // Reactive view of the selected race (stays fresh after Firestore writes —
-  // e.g. meeting_key/qualifying_2026 persisted by a fetch below), instead of
+  // e.g. meeting_key/qualifying persisted by a fetch below), instead of
   // a frozen snapshot captured once when the sheet was opened. Mirrors
   // PredictionSheet.jsx's currentRace.
   const selectedRace = useMemo(
@@ -239,7 +239,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
     }
   }
 
-  // Moved from PredictionSheet.jsx — writing qualifying_2026/meeting_key to
+  // Moved from PredictionSheet.jsx — writing qualifying/meeting_key to
   // races/{id} requires super-admin per firestore.rules, so the trigger
   // belongs on this admin-only screen, not the player-facing race modal.
   const fetchQualifyingFromOpenF1 = async () => {
@@ -278,12 +278,13 @@ export default function ReglagesSuperAdmin({ addToast }) {
       }
 
       const qualifying = {
+        year: new Date().getFullYear(),
         P1: buildEntry(1),
         P2: buildEntry(2),
         P3: buildEntry(3),
         fetchedAt: new Date().toISOString(),
       }
-      await upsertDoc('races', String(selectedRace.id), { qualifying_2026: qualifying })
+      await upsertDoc('races', String(selectedRace.id), { qualifying })
       setOpenf1QualMsg({ type: 'success', text: 'Qualifications récupérées' })
     } catch (err) {
       setOpenf1QualMsg({ type: 'error', text: err.message })

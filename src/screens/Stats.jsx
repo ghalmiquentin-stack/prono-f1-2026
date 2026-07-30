@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getProfile, getPlayerIdentity } from '../utils/profiles'
+import { getPenaltyAmount } from '../utils/penalties'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import PlayerBadge from '../components/PlayerBadge'
 import {
@@ -108,7 +109,7 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
       const avgScore = racesPlayed > 0 ? +(total / racesPlayed).toFixed(1) : 0
       const perfectPodiums = raceScores.filter(rs => rs.perfectPodium).length
       const bestScore = raceScores.reduce((best, rs) => Math.max(best, rs.net ?? 0), 0)
-      const totalPenalties = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
+      const totalPenalties = pens.reduce((s, p) => s + getPenaltyAmount(p), 0)
       const exactHits = raceScores.reduce((s, rs) =>
         s + Object.values(rs.details ?? {}).filter(d => d === 'exact').length, 0)
       const podiumHits = raceScores.reduce((s, rs) =>
@@ -513,26 +514,6 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
           </div>
         </div>
       )}
-
-      {/* Scoring system */}
-      <div className="px-5 mb-6">
-        <p className="section-title">Système de points</p>
-        <div className="card p-4 space-y-3">
-          {[
-            { label: 'Position exacte',               pts: '+10', color: 'text-green-400' },
-            { label: 'Sur le podium (mauvaise pos.)',  pts: '+3',  color: 'text-yellow-400' },
-            { label: '⭐ Podium parfait (bonus)',      pts: '+5',  color: 'text-gold' },
-            { label: 'Série de 3 courses',            pts: '+10', color: 'text-blue-400' },
-            { label: 'Soumission tardive',            pts: '-10', color: 'text-accent' },
-            { label: 'Modification de pronostic',     pts: '-5',  color: 'text-accent' },
-          ].map(({ label, pts, color }) => (
-            <div key={label} className="flex items-center justify-between">
-              <span className="text-sm text-muted">{label}</span>
-              <span className={`font-black text-sm ${color}`}>{pts}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   )
 }

@@ -34,6 +34,8 @@ const COLLECTIONS = [
   'drivers',
   'races_history',
   'config',
+  'leagues',
+  'profiles',
 ];
 
 async function main() {

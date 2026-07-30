@@ -1,3 +1,5 @@
+import { getPenaltyAmount } from './penalties'
+
 /**
  * Calculate the raw score for a single race prediction vs result.
  * Returns { raw, bonus, total, details, perfectPodium }
@@ -30,15 +32,13 @@ export function calculateRaceScore(prediction, result) {
 }
 
 /**
- * Calculate the penalty total for an array of penalty objects.
+ * Calculate the penalty total for an array of penalty objects — uses each
+ * penalty's own stored/configured amount (getPenaltyAmount), not a fixed
+ * per-type value, so a league's actual modificationPenalty/postQualifsPenalty
+ * amount is reflected in the net score.
  */
 export function calculatePenalties(penalties) {
-  let total = 0
-  for (const p of penalties) {
-    if (p.type === 'late') total += 10
-    if (p.type === 'change') total += 5
-  }
-  return total
+  return penalties.reduce((total, p) => total + getPenaltyAmount(p), 0)
 }
 
 /**

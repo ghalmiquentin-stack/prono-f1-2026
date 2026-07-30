@@ -4,6 +4,7 @@ import { useCollection, where } from '../hooks/useFirestore'
 import { calculateRaceScore, calculateAllSeasonScores } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
 import { withRoundNumbers, formatRaceLocalTime } from '../utils/races'
+import { getPenaltyAmount } from '../utils/penalties'
 import PredictionSheet from '../components/PredictionSheet'
 import Skeleton from '../components/Skeleton'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
@@ -68,7 +69,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
     if (!pred || !race.result) return null
     const { total, bonus, details, perfectPodium } = calculateRaceScore(pred.prediction, race.result)
     const pens = getMyPenalties(race.id)
-    const penTotal = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
+    const penTotal = pens.reduce((s, p) => s + getPenaltyAmount(p), 0)
     return { net: total - penTotal, details, prediction: pred.prediction, penTotal, perfectPodium }
   }
 

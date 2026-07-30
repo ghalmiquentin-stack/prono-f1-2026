@@ -3,7 +3,7 @@ import { useDocument, upsertDoc } from '../hooks/useFirestore'
 import { calculateRaceScore } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
 import { getModificationCount } from '../utils/predictions'
-import { summarizePenalties } from '../utils/penalties'
+import { summarizePenalties, getPenaltyAmount } from '../utils/penalties'
 import { formatRaceLocalTime } from '../utils/races'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
 import BottomSheet from './BottomSheet'
@@ -274,7 +274,7 @@ export default function PredictionSheet({
                       </div>
                     )
                     const { total, details, perfectPodium } = calculateRaceScore(pred.prediction, currentRace.result)
-                    const penTotal = pens.reduce((s, p) => s + (p.type === 'late' ? 10 : 5), 0)
+                    const penTotal = pens.reduce((s, p) => s + getPenaltyAmount(p), 0)
                     const net = total - penTotal
                     return (
                       <div key={pid} className="card p-3">
@@ -456,16 +456,18 @@ export default function PredictionSheet({
                     </div>
                   )}
 
-                  {/* Qualifications 2026 — strictly read-only here: fetching/
+                  {/* Qualifications — strictly read-only here: fetching/
                       writing this data requires super-admin (races/{id} write
                       rule), so the trigger lives in ReglagesSuperAdmin.jsx,
                       not this player-facing modal. */}
                   <div>
-                    <p className="section-title mb-2">Qualifications 2026</p>
-                    {currentRace.qualifying_2026 ? (
+                    <p className="section-title mb-2">
+                      Qualifications {currentRace.qualifying?.year ?? new Date().getFullYear()}
+                    </p>
+                    {currentRace.qualifying ? (
                       <div className="space-y-2">
                         {POSITIONS.map((pos, i) => {
-                          const entry      = currentRace.qualifying_2026[pos]
+                          const entry      = currentRace.qualifying[pos]
                           const driverName = entry?.name
                           const photoUrl   = getDriverPhoto(drivers, driverName)
                           return (

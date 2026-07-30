@@ -33,7 +33,7 @@ export async function resolveMeetingKey(race) {
   if (!countryName) throw new Error(`Pays non mappé : "${race.name}"`)
 
   const res = await fetch(
-    `https://api.openf1.org/v1/meetings?year=2026&country_name=${encodeURIComponent(countryName)}`
+    `https://api.openf1.org/v1/meetings?year=${new Date().getFullYear()}&country_name=${encodeURIComponent(countryName)}`
   )
   const meetings = await res.json()
   if (!meetings.length) throw new Error(`Aucune réunion OpenF1 pour ${race.name}`)

@@ -19,7 +19,7 @@ export const RACES = [
   { id: 15, name: 'Italie',             flag: '🇮🇹', city: 'Monza',        circuit: 'Monza',                date: '2026-09-06', raceTime: '15:00', raceTimeUTC: '13:00', status: 'upcoming', result: null },
   { id: 16, name: 'Espagne (Madrid)',   flag: '🇪🇸', city: 'Madrid',       circuit: 'IFEMA Madrid',         date: '2026-09-13', raceTime: '15:00', raceTimeUTC: '13:00', status: 'upcoming', result: null },
   { id: 17, name: 'Azerbaïdjan',        flag: '🇦🇿', city: 'Bakou',        circuit: 'Bakou',                date: '2026-09-26', raceTime: '13:00', raceTimeUTC: '11:00', status: 'upcoming', result: null },
-  { id: 17.5, name: 'Bahreïn (Sepang)', flag: '🇲🇾', city: 'Sepang',       circuit: 'Sepang International Circuit', date: '2026-10-04', raceTime: '09:00', raceTimeUTC: '07:00', status: 'upcoming', result: null },
+  { id: 17.5, name: 'Bahreïn (Sepang)', flag: '🇲🇾', city: 'Kuala Lumpur', circuit: 'Sepang International Circuit', date: '2026-10-04', raceTime: '09:00', raceTimeUTC: '07:00', status: 'upcoming', result: null },
   { id: 18, name: 'Singapour',          flag: '🇸🇬', city: 'Marina Bay',   circuit: 'Marina Bay',           date: '2026-10-11', raceTime: '14:00', raceTimeUTC: '12:00', status: 'upcoming', result: null },
   { id: 19, name: 'États-Unis',         flag: '🇺🇸', city: 'Austin',       circuit: 'COTA',                 date: '2026-10-25', raceTime: '21:00', raceTimeUTC: '20:00', status: 'upcoming', result: null },
   { id: 20, name: 'Mexique',            flag: '🇲🇽', city: 'Mexico',       circuit: 'Hermanos Rodríguez',   date: '2026-11-01', raceTime: '21:00', raceTimeUTC: '20:00', status: 'upcoming', result: null },
