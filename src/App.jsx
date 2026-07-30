@@ -67,12 +67,13 @@ export default function App() {
   // but don't clobber a selection that's still pending confirmation from
   // the players listener (see pendingActiveLeagueId above).
   useEffect(() => {
+    if (!user) return
     if (playersLoading) return
     if (pendingActiveLeagueId && pendingActiveLeagueId === activeLeagueId) return
     if (effectiveActiveLeagueId !== activeLeagueId) {
       persistActiveLeagueId(effectiveActiveLeagueId)
     }
-  }, [playersLoading, effectiveActiveLeagueId, activeLeagueId, pendingActiveLeagueId])
+  }, [user, playersLoading, effectiveActiveLeagueId, activeLeagueId, pendingActiveLeagueId])
 
   // A user with no league membership at all lands on Mes Ligues, not Accueil —
   // unless a league selection just got triggered and is still pending, in
