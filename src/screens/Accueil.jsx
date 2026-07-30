@@ -315,9 +315,9 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
   return (
     <div className="pb-4">
       {/* ── Header ── */}
-      <div className="px-5 pt-3 pb-4">
+      <div className="px-5 pt-5 pb-4">
         {/* Row 1: league badge + player badge */}
-        <div className="flex items-center justify-between gap-3 mb-1">
+        <div className="flex items-center justify-between gap-3 mb-2">
           {activeLeagueName ? <ActiveLeagueBadge name={activeLeagueName} /> : <span />}
           <PlayerBadge
             avatar={playerAvatar}
