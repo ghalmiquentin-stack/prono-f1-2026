@@ -4,6 +4,7 @@ import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getProfile } from '../utils/profiles'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
+import PlayerBadge from '../components/PlayerBadge'
 import Skeleton from '../components/Skeleton'
 
 // Dense ranking: same points → same rank, no gap after ties
@@ -38,7 +39,7 @@ function contentHeight(playerCount) {
   return playerCount * ITEM_H + Math.max(0, playerCount - 1) * ITEM_GAP + STEP_PAD
 }
 
-export default function Classement({ currentPlayerId, activeLeagueName, activeLeagueId }) {
+export default function Classement({ currentPlayerId, activeLeagueName, activeLeagueId, setActiveTab }) {
   const { user } = useAuth()
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
   const { data: players, loading: playersLoading } = useCollection(user ? 'players' : null, leagueConstraint)
@@ -110,6 +111,11 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
     return { 1: h1, 2: h2, 3: h3 }
   }, [podiumGroups])
 
+  const currentPlayerStanding = useMemo(
+    () => standings.find(p => p.id === currentPlayerId),
+    [standings, currentPlayerId]
+  )
+
   const leaderTotal = standings[0]?.total ?? 0
 
   if (loading) {
@@ -123,11 +129,16 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
   return (
     <div className="pb-4">
       <div className="px-5 pt-5 pb-4">
-        {activeLeagueName && (
-          <div className="mb-2">
-            <ActiveLeagueBadge name={activeLeagueName} />
-          </div>
-        )}
+        <div className="flex items-center justify-between gap-3 mb-2">
+          {activeLeagueName ? <ActiveLeagueBadge name={activeLeagueName} /> : <span />}
+          <PlayerBadge
+            avatar={String(currentPlayerStanding?.avatar ?? '🏎️')}
+            color={String(currentPlayerStanding?.color ?? '#6B6B8A')}
+            displayName={String(currentPlayerStanding?.displayName ?? currentPlayerId)}
+            points={currentPlayerStanding?.total ?? 0}
+            onClick={() => setActiveTab?.('monprofil')}
+          />
+        </div>
         <h1 className="text-2xl font-black tracking-tight mb-1">Classement</h1>
         <p className="text-sm text-muted">
           {completedRaces.length} course{completedRaces.length !== 1 ? 's' : ''} disputée{completedRaces.length !== 1 ? 's' : ''}

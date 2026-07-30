@@ -237,7 +237,7 @@ export default function App() {
           : leaguesScreen
       case 'classement':
         return hasAnyLeague
-          ? <Classement currentPlayerId={playerId} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} />
+          ? <Classement currentPlayerId={playerId} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} setActiveTab={setActiveTab} />
           : leaguesScreen
       case 'stats':
         return hasAnyLeague
