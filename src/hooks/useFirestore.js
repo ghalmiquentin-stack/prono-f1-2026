@@ -8,7 +8,6 @@ import {
   orderBy,
   setDoc,
   updateDoc,
-  addDoc,
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore'
@@ -79,11 +78,6 @@ export function useDocument(collectionName, docId) {
 export async function upsertDoc(collectionName, docId, data) {
   const ref = doc(db, collectionName, docId)
   await setDoc(ref, { ...data, updatedAt: serverTimestamp() }, { merge: true })
-}
-
-/** Add a document (auto-ID) */
-export async function addDocument(collectionName, data) {
-  return addDoc(collection(db, collectionName), { ...data, createdAt: serverTimestamp() })
 }
 
 /** Update specific fields */

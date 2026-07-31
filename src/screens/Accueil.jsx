@@ -14,8 +14,6 @@ import PlayerBadge from '../components/PlayerBadge'
 import PredictionSheet from '../components/PredictionSheet'
 import Skeleton, { SkeletonCard } from '../components/Skeleton'
 
-const PLAYERS_ORDER = ['william', 'quentin', 'alex', 'romain']
-
 const PLAYER_COLORS_FALLBACK = {
   william: '#3B82F6',
   quentin: '#22C55E',

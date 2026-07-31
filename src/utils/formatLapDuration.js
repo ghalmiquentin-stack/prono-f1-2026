@@ -1,7 +1,8 @@
 // Formats an OpenF1 `lap_duration` (raw seconds, float) as "M:SS.mmm" —
-// shared between the browser app (utils/openf1.js) and the standalone
-// seedHistory.js script. Kept dependency-free (no Firebase imports) so it
-// stays safely importable from both a Vite-bundled context and plain Node.
+// shared between the browser app (screens/ReglagesSuperAdmin.jsx) and the
+// standalone seedHistory.js script. Kept dependency-free (no Firebase
+// imports) so it stays safely importable from both a Vite-bundled context
+// and plain Node.
 export function formatLapDuration(seconds) {
   if (!seconds) return null
   const m = Math.floor(seconds / 60)

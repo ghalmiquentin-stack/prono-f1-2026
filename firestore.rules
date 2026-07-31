@@ -66,11 +66,23 @@ service cloud.firestore {
 
       allow update: if isSuperAdmin()
         || isLeagueAdmin(resource.data.leagueId)
-        || resource.data.authUid == request.auth.uid
+        // Self, toggling membership status only (LeaveLeagueSheet.jsx,
+        // RejoindreLigue.jsx) — never any other field on one's own doc.
+        || (
+          resource.data.authUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'updatedAt'])
+        )
         || (
           resource.data.authUid == null
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['authUid', 'updatedAt'])
           && request.resource.data.authUid == request.auth.uid
+        )
+        // Self, unlinking on account deletion (MonProfil.jsx) — clears
+        // authUid and swaps in a neutral display override, nothing else.
+        || (
+          resource.data.authUid == request.auth.uid
+          && request.resource.data.authUid == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['authUid', 'displayNameOverride', 'updatedAt'])
         );
 
       allow create: if isSuperAdmin()
