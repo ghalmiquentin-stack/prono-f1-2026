@@ -1,22 +1,18 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useDocument, upsertDoc } from '../hooks/useFirestore'
-import { calculateRaceScore } from '../utils/scoring'
+import { calculateRaceScore, detailPoints } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
 import { getModificationCount } from '../utils/predictions'
 import { summarizePenalties, getPenaltyAmount } from '../utils/penalties'
 import { formatRaceLocalTime } from '../utils/races'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
+import { getDriverPhoto } from '../utils/drivers'
 import BottomSheet from './BottomSheet'
 import Countdown from './Countdown'
 
 const POSITIONS = ['P1', 'P2', 'P3']
 const POS_COLOR = { P1: 'text-gold', P2: 'text-silver', P3: 'text-bronze' }
 const POS_BG    = { P1: 'bg-gold',   P2: 'bg-silver',   P3: 'bg-bronze'   }
-
-function getDriverPhoto(drivers, displayName) {
-  if (!displayName || !drivers?.length) return null
-  return drivers.find(d => d.last_name?.toLowerCase() === displayName.toLowerCase())?.headshot_url ?? null
-}
 
 // Group Firebase drivers by team, sorted by team name
 function groupDriversByTeam(drivers) {
@@ -315,7 +311,7 @@ export default function PredictionSheet({
                                   detail === 'exact'  ? 'text-green-400'  :
                                   detail === 'podium' ? 'text-yellow-400' : 'text-muted'
                                 }`}>
-                                  {detail === 'exact' ? '+10' : detail === 'podium' ? '+3' : '0'}
+                                  {detailPoints(detail) > 0 ? `+${detailPoints(detail)}` : '0'}
                                 </div>
                               </div>
                             )

@@ -37,6 +37,17 @@ service cloud.firestore {
         && rules.modificationPenalty.amount == amount;
     }
 
+    // Un pronostic est verrouillé si la course est annulée, ou si son heure
+    // de départ (raceStartAt) est déjà passée selon l'horloge serveur.
+    // raceId est stocké comme un nombre sur les documents predictions/races
+    // (ex. 17, ou 17.5 pour Bahreïn/Sepang) — string() est nécessaire pour
+    // construire un chemin de document Firestore valide à partir de ce nombre.
+    function raceIsLocked(raceId) {
+      let race = get(/databases/$(database)/documents/races/$(string(raceId))).data;
+      return race.status == 'cancelled'
+        || (race.raceStartAt != null && request.time >= race.raceStartAt);
+    }
+
     // ── leagues ──────────────────────────────────────────────────────────
     match /leagues/{leagueId} {
       allow read: if isSignedIn();
@@ -103,7 +114,10 @@ service cloud.firestore {
       // existing document), since request.resource is undefined on delete.
       allow create: if isSuperAdmin()
         || isLeagueAdmin(request.resource.data.leagueId)
-        || get(/databases/$(database)/documents/players/$(request.resource.data.playerId)).data.authUid == request.auth.uid;
+        || (
+          get(/databases/$(database)/documents/players/$(request.resource.data.playerId)).data.authUid == request.auth.uid
+          && !raceIsLocked(request.resource.data.raceId)
+        );
 
       // The "own prediction" clause is field-restricted: a player may only
       // ever touch the content of their own pronostic and its own tracking
@@ -120,6 +134,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'prediction', 'initialPrediction', 'submittedAt', 'modifiedAt', 'modificationCount', 'leagueId', 'updatedAt'
           ])
+          && (!raceIsLocked(resource.data.raceId) || resource.data.manualUnlockOverride == true)
         );
 
       allow delete: if isSuperAdmin()

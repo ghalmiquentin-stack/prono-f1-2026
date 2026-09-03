@@ -8,6 +8,7 @@ import { getProfile } from '../utils/profiles'
 import { hasRaceStarted, formatRaceLocalTime } from '../utils/races'
 import { getModificationCount } from '../utils/predictions'
 import { summarizePenalties } from '../utils/penalties'
+import { getDriverPhoto } from '../utils/drivers'
 import Countdown from '../components/Countdown'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import PlayerBadge from '../components/PlayerBadge'
@@ -63,11 +64,6 @@ function getLocalTzAbbr(isoString) {
     timeZoneName: 'short',
   }).formatToParts(new Date(isoString))
   return parts.find(p => p.type === 'timeZoneName')?.value ?? ''
-}
-
-function getDriverPhoto(drivers, displayName) {
-  if (!displayName || !drivers?.length) return null
-  return drivers.find(d => d.last_name?.toLowerCase() === displayName.toLowerCase())?.headshot_url ?? null
 }
 
 // No explicit timeZone on either part — resolves to the viewer's own browser

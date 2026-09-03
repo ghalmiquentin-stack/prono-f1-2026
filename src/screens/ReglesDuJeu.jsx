@@ -1,14 +1,22 @@
+import {
+  POINTS_EXACT,
+  POINTS_PODIUM,
+  PERFECT_PODIUM_BONUS,
+  STREAK_LENGTH,
+  STREAK_BONUS,
+} from '../utils/scoring'
+
 const SCORING_RULES = [
   {
     label: 'Position exacte',
     detail: 'Le pilote pronostiqué est exactement à la bonne position (P1, P2 ou P3).',
-    points: '+10 pts',
+    points: `+${POINTS_EXACT} pts`,
     color: '#22C55E',
   },
   {
     label: 'Mauvaise position sur le podium',
     detail: 'Le pilote pronostiqué termine sur le podium, mais pas à la position annoncée.',
-    points: '+3 pts',
+    points: `+${POINTS_PODIUM} pts`,
     color: '#F59E0B',
   },
   {
@@ -20,13 +28,13 @@ const SCORING_RULES = [
   {
     label: 'Bonus Podium Parfait',
     detail: 'Les 3 positions (P1, P2, P3) sont toutes exactes.',
-    points: '+5 pts',
+    points: `+${PERFECT_PODIUM_BONUS} pts`,
     color: '#FFD700',
   },
   {
     label: 'Bonus Série',
-    detail: "Le joueur avec le meilleur score net sur 3 Grands Prix consécutifs gagne ce bonus. En cas d'égalité en tête, tous les joueurs ex-aequo comptent comme gagnants. Si la série est interrompue, le compteur repart à zéro.",
-    points: '+10 pts',
+    detail: `Le joueur avec le meilleur score net sur ${STREAK_LENGTH} Grands Prix consécutifs gagne ce bonus. En cas d'égalité en tête, tous les joueurs ex-aequo comptent comme gagnants. Si la série est interrompue, le compteur repart à zéro.`,
+    points: `+${STREAK_BONUS} pts`,
     color: '#FFD700',
   },
 ]

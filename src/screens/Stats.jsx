@@ -4,6 +4,7 @@ import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getProfile, getPlayerIdentity } from '../utils/profiles'
 import { getPenaltyAmount } from '../utils/penalties'
+import { getDriverTeam, getTeamColor } from '../data/drivers'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import PlayerBadge from '../components/PlayerBadge'
 import {
@@ -11,30 +12,6 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import Skeleton from '../components/Skeleton'
-
-// Team colors for 2026 grid
-const DRIVER_TEAMS = {
-  Russell:    { team: 'Mercedes',     color: '#00D2BE' },
-  Antonelli:  { team: 'Mercedes',     color: '#00D2BE' },
-  Hamilton:   { team: 'Ferrari',      color: '#E8002D' },
-  Leclerc:    { team: 'Ferrari',      color: '#E8002D' },
-  Norris:     { team: 'McLaren',      color: '#FF8000' },
-  Piastri:    { team: 'McLaren',      color: '#FF8000' },
-  Verstappen: { team: 'Red Bull',     color: '#3671C6' },
-  Pérez:      { team: 'Red Bull',     color: '#3671C6' },
-  Alonso:     { team: 'Aston Martin', color: '#358C75' },
-  Stroll:     { team: 'Aston Martin', color: '#358C75' },
-  Sainz:      { team: 'Williams',     color: '#64C4FF' },
-  Albon:      { team: 'Williams',     color: '#64C4FF' },
-  Gasly:      { team: 'Alpine',       color: '#FF69B4' },
-  Ocon:       { team: 'Alpine',       color: '#FF69B4' },
-  Hülkenberg: { team: 'Haas',         color: '#B6BABD' },
-  Bearman:    { team: 'Haas',         color: '#B6BABD' },
-  Tsunoda:    { team: 'Racing Bulls', color: '#6692FF' },
-  Lawson:     { team: 'Racing Bulls', color: '#6692FF' },
-  Zhou:       { team: 'Kick Sauber',  color: '#52E252' },
-  Bottas:     { team: 'Kick Sauber',  color: '#52E252' },
-}
 
 function CustomTooltip({ active, payload, label }) {
   if (active && payload && payload.length) {
@@ -211,14 +188,13 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
 
     return Object.entries(driverCounts)
       .map(([driver, count]) => {
-        const teamInfo = DRIVER_TEAMS[driver] ?? { team: '', color: '#6B6B8A' }
         return {
           driver,
           count,
           hits: driverHits[driver] ?? 0,
           accuracy: count > 0 ? Math.round(((driverHits[driver] ?? 0) / count) * 100) : 0,
-          team: teamInfo.team,
-          teamColor: teamInfo.color,
+          team: getDriverTeam(driver)?.name ?? '',
+          teamColor: getTeamColor(driver),
           predictorCounts: driverPredictorCounts[driver] ?? {},
         }
       })

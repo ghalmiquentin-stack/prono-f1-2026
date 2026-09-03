@@ -5,15 +5,11 @@ import { calculateRaceScore, calculateAllSeasonScores } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
 import { withRoundNumbers, formatRaceLocalTime } from '../utils/races'
 import { getPenaltyAmount } from '../utils/penalties'
+import { getDriverPhoto } from '../utils/drivers'
 import PredictionSheet from '../components/PredictionSheet'
 import Skeleton from '../components/Skeleton'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import PlayerBadge from '../components/PlayerBadge'
-
-function getDriverPhoto(drivers, displayName) {
-  if (!displayName || !drivers?.length) return null
-  return drivers.find(d => d.last_name?.toLowerCase() === displayName.toLowerCase())?.headshot_url ?? null
-}
 
 const POSITIONS = ['P1', 'P2', 'P3']
 const POS_COLOR = { P1: 'text-gold', P2: 'text-silver', P3: 'text-bronze' }

@@ -1,5 +1,16 @@
 import { getPenaltyAmount } from './penalties'
 
+// Fixed point values for the scoring formula (not configurable per league,
+// unlike penalty amounts) — the single source of truth also driving
+// ReglesDuJeu.jsx's rules table and PredictionSheet.jsx's per-race
+// breakdown display, so those screens can never drift from the actual
+// calculation below.
+export const POINTS_EXACT = 10
+export const POINTS_PODIUM = 3
+export const PERFECT_PODIUM_BONUS = 5
+export const STREAK_LENGTH = 3
+export const STREAK_BONUS = 10
+
 /**
  * Calculate the raw score for a single race prediction vs result.
  * Returns { raw, bonus, total, details, perfectPodium }
@@ -14,10 +25,10 @@ export function calculateRaceScore(prediction, result) {
   for (const pos of ['P1', 'P2', 'P3']) {
     const predicted = prediction[pos]
     if (predicted === result[pos]) {
-      raw += 10
+      raw += POINTS_EXACT
       details[pos] = 'exact'
     } else if (realPodium.includes(predicted)) {
-      raw += 3
+      raw += POINTS_PODIUM
       details[pos] = 'podium'
     } else {
       details[pos] = 'miss'
@@ -26,7 +37,7 @@ export function calculateRaceScore(prediction, result) {
 
   const perfectPodium =
     details.P1 === 'exact' && details.P2 === 'exact' && details.P3 === 'exact'
-  const bonus = perfectPodium ? 5 : 0
+  const bonus = perfectPodium ? PERFECT_PODIUM_BONUS : 0
 
   return { raw, bonus, total: raw + bonus, details, perfectPodium }
 }
@@ -103,8 +114,8 @@ function calculateStreakBonusFromWins(wins) {
   for (const win of wins) {
     if (win) {
       consecutive++
-      if (consecutive === 3) {
-        bonus += 10
+      if (consecutive === STREAK_LENGTH) {
+        bonus += STREAK_BONUS
         consecutive = 0
       }
     } else {
@@ -203,7 +214,7 @@ export function detailLabel(detail) {
  * Get points for a detail type.
  */
 export function detailPoints(detail) {
-  if (detail === 'exact') return 10
-  if (detail === 'podium') return 3
+  if (detail === 'exact') return POINTS_EXACT
+  if (detail === 'podium') return POINTS_PODIUM
   return 0
 }

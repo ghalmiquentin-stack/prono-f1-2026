@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { deleteField } from 'firebase/firestore'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, useDocument, upsertDoc } from '../hooks/useFirestore'
 import { clearDatabase } from '../data/seed'
@@ -117,6 +118,8 @@ export default function ReglagesSuperAdmin({ addToast }) {
         ...selectedRace,
         result: resultDraft,
         status: 'completed',
+        resultSource: 'manual',
+        autoFetchGaveUp: deleteField(),
       })
       addToast(`Résultat GP ${selectedRace.name} enregistré !`, 'success')
       closeResultSheet()
@@ -317,7 +320,19 @@ export default function ReglagesSuperAdmin({ addToast }) {
               <div key={race.id} className="card p-3 flex items-center gap-3">
                 <span className="text-xl">{race.flag}</span>
                 <div className="flex-1">
-                  <p className="font-bold text-sm">{race.name}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-sm">{race.name}</p>
+                    {race.status === 'completed' && race.resultSource === 'auto' && (
+                      <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-bold shrink-0">
+                        Récupéré automatiquement (OpenF1)
+                      </span>
+                    )}
+                    {race.status === 'upcoming' && race.autoFetchGaveUp === true && (
+                      <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full font-bold shrink-0">
+                        Non récupéré automatiquement — saisie manuelle recommandée
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted">
                     {new Date(race.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
                   </p>
