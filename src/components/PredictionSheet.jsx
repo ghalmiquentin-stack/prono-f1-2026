@@ -147,8 +147,15 @@ export default function PredictionSheet({
         // Modification — no cap: every save after the first just bumps the
         // counter. Penalty (if any) stays informational/dynamic, driven by
         // the league's own modificationPenalty rule.
+        // `_id` is a client-only artifact injected by useCollection/useDocument
+        // ({ _id: d.id, ...d.data() }) — never a real Firestore field. Strip it
+        // before spreading `existing`, otherwise it leaks into the write and
+        // gets rejected by predictions.update's field whitelist for regular
+        // players (their prediction doc simply doesn't have `_id` yet, so
+        // introducing it counts as a newly affected key outside hasOnly([...])).
+        const { _id, ...existingFields } = existing
         await upsertDoc('predictions', `${currentPlayerId}_${race.id}`, {
-          ...existing,
+          ...existingFields,
           leagueId: activeLeagueId,
           prediction: draftPrediction,
           modificationCount: getModificationCount(existing) + 1,
