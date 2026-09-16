@@ -74,7 +74,7 @@ export default function CreerLigue({ user, setActiveTab, onSelectLeague }) {
           postQualifsPenalty: { enabled: postQualEnabled, amount: postQualAmountNum },
           hidePredictionsBeforeRace: { enabled: hideEnabled },
         },
-        maxPlayers: 20,
+        maxPlayers: 100,
         createdAt: serverTimestamp(),
         createdBy: user.uid,
       })
