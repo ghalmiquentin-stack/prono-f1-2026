@@ -114,8 +114,12 @@ export default function ReglagesSuperAdmin({ addToast }) {
     if (!resultDraft.P1 || !resultDraft.P2 || !resultDraft.P3 || !selectedRace) return
     setSaving(true)
     try {
+      // `_id` is a client-only artifact injected by useCollection ({ _id:
+      // d.id, ...d.data() }) — never a real Firestore field. Strip it before
+      // spreading, so it never gets written back into the document.
+      const { _id, ...selectedRaceFields } = selectedRace
       await upsertDoc('races', String(selectedRace.id), {
-        ...selectedRace,
+        ...selectedRaceFields,
         result: resultDraft,
         status: 'completed',
         resultSource: 'manual',
@@ -133,7 +137,10 @@ export default function ReglagesSuperAdmin({ addToast }) {
   const resetRaceResult = async (race) => {
     if (!confirm(`Réinitialiser le résultat de ${race.name} ?`)) return
     try {
-      await upsertDoc('races', String(race.id), { ...race, result: null, status: 'upcoming' })
+      // Same _id-stripping as saveResult() above — client-only artifact,
+      // must never be written back to Firestore.
+      const { _id, ...raceFields } = race
+      await upsertDoc('races', String(race.id), { ...raceFields, result: null, status: 'upcoming' })
       addToast('Résultat supprimé', 'info')
     } catch {
       addToast('Erreur', 'error')

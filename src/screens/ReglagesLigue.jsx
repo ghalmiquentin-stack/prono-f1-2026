@@ -158,7 +158,11 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
       return
     }
     try {
-      await upsertDoc('predictions', pred._id, { ...pred, manualUnlockOverride: !pred.manualUnlockOverride })
+      // `_id` is a client-only artifact injected by useCollection ({ _id:
+      // d.id, ...d.data() }) — never a real Firestore field. Strip it before
+      // spreading, so it never gets written back into the document.
+      const { _id, ...predFields } = pred
+      await upsertDoc('predictions', pred._id, { ...predFields, manualUnlockOverride: !pred.manualUnlockOverride })
       addToast?.(
         pred.manualUnlockOverride
           ? 'Déverrouillage exceptionnel désactivé'
