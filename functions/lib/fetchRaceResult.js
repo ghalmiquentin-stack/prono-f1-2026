@@ -103,4 +103,4 @@ async function fetchRaceResult(db, race) {
   }
 }
 
-module.exports = { fetchRaceResult }
+module.exports = { fetchRaceResult, resolveMeetingKey }
