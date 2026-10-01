@@ -334,12 +334,9 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             <div className="flex items-start gap-3">
               <span className="text-2xl">🌱</span>
               <div>
-                <p className="font-bold text-sm mb-1">Aucune donnée trouvée</p>
+                <p className="font-bold text-sm mb-1">Aucune course disponible</p>
                 <p className="text-xs text-muted leading-relaxed">
-                  La base de données est vide. Rendez-vous dans{' '}
-                  <strong className="text-white">⚙️ Administration</strong> et cliquez sur{' '}
-                  <strong className="text-accent">Initialiser les données</strong>{' '}
-                  (mot de passe : <span className="font-mono text-accent">f1paris2026</span>).
+                  Il n'y a pas encore de calendrier de courses pour cette saison.
                 </p>
               </div>
             </div>

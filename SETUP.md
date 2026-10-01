@@ -104,13 +104,13 @@ Partage cette URL aux 4 joueurs. Vercel redéploie automatiquement à chaque `gi
 
 ---
 
-## Étape 4 — Initialiser les données
+## Étape 4 — Attribuer le rôle super-admin
 
-1. Ouvre l'app sur ton téléphone ou navigateur
-2. Sélectionne ton joueur sur l'écran d'accueil
-3. Va sur l'onglet **⚙️ Administration**
-4. Saisis le mot de passe admin : `f1paris2026`
-5. Clique **"Initialiser les données"** → cela peuple Firestore avec les 23 courses et les données de la course 1 (Australie)
+1. Crée ton compte dans l'app (inscription classique)
+2. Récupère ton UID Firebase (console Firebase → **Authentication** → **Users**)
+3. Depuis ton terminal, lance `node scripts/set-admin-claim.cjs TON_UID` (nécessite `serviceAccountKey.json` à la racine du projet)
+4. Déconnecte-toi puis reconnecte-toi dans l'app pour que le rôle soit pris en compte (rafraîchissement du jeton d'authentification)
+5. L'onglet **⚙️ Administration** apparaît alors dans la navigation — c'est depuis cet écran que les courses, pilotes et résultats sont gérés
 
 ---
 
@@ -140,7 +140,7 @@ npm run dev
 | Alex    | `#F97316` | 🔥    |
 | Romain  | `#A855F7` | ⚡    |
 
-Mot de passe admin : **`f1paris2026`**
+Rôle super-admin : attribué via `node scripts/set-admin-claim.cjs UID` (voir Étape 4) — pas de mot de passe, le rôle est lié au compte Firebase Auth.
 
 ---
 
