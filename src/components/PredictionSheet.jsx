@@ -161,17 +161,17 @@ export default function PredictionSheet({
           modificationCount: getModificationCount(existing) + 1,
           modifiedAt: new Date(),
         })
-        addToast(
-          modPenaltyEnabled
-            ? `Pronostic modifié — pénalité -${modPenaltyAmount} pts appliquée`
-            : 'Pronostic modifié',
-          'warning'
-        )
 
-        // Best-effort informational penalty record — the prediction itself
-        // is already saved at this point, so a failure here (Firestore
-        // rules, transient error, etc.) must never block closing the sheet
-        // or show the user an error toast.
+        // Best-effort penalty record — the prediction itself is already
+        // saved at this point, so a failure here (Firestore rules,
+        // transient error, etc.) must never block closing the sheet. It
+        // DOES change which toast is shown below, though: the message must
+        // reflect whether the penalty was actually recorded when one was
+        // expected (modPenaltyEnabled), rather than claiming it unconditionally
+        // before even attempting the write — that exact pattern previously
+        // let a penalty silently fail to write while the toast still said
+        // "appliquée" (TC-006).
+        let penaltyWriteFailed = false
         try {
           await upsertDoc('penalties', `pen_change_${currentPlayerId}_${race.id}_${Date.now()}`, {
             playerId: currentPlayerId, raceId: race.id, type: 'change', leagueId: activeLeagueId,
@@ -179,6 +179,21 @@ export default function PredictionSheet({
           })
         } catch (penErr) {
           console.error(penErr)
+          penaltyWriteFailed = true
+        }
+
+        if (modPenaltyEnabled && penaltyWriteFailed) {
+          addToast(
+            "Pronostic modifié, mais la pénalité n'a pas pu être enregistrée — signalez-le à l'admin de la ligue",
+            'error'
+          )
+        } else {
+          addToast(
+            modPenaltyEnabled
+              ? `Pronostic modifié — pénalité -${modPenaltyAmount} pts appliquée`
+              : 'Pronostic modifié',
+            'warning'
+          )
         }
       }
       handleClose()
