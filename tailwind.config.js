@@ -15,7 +15,7 @@ export default {
         surface: '#1E1E2E',
         surfaceHigh: '#2A2A3E',
         border: '#2E2E42',
-        muted: '#6B6B8A',
+        muted: '#9494AC',
         player: {
           william: '#3B82F6',
           quentin: '#22C55E',
