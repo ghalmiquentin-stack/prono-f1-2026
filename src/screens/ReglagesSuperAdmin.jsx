@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect } from 'react'
 import { deleteField } from 'firebase/firestore'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, useDocument, upsertDoc } from '../hooks/useFirestore'
-import { clearDatabase } from '../data/seed'
 import { resolveMeetingKey } from '../utils/openf1'
 import { formatLapDuration } from '../utils/formatLapDuration'
 import { TEAMS } from '../data/drivers'
@@ -22,10 +21,6 @@ export default function ReglagesSuperAdmin({ addToast }) {
   const [resultPosition, setResultPosition] = useState(null)
   const [driverPickerOpen, setDriverPickerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-
-  // ── Danger zone confirm modals ───────────────────────────────────────────
-  const [confirmClear, setConfirmClear] = useState(false)
-  const [clearing, setClearing] = useState(false)
 
   // ── OpenF1 sync ───────────────────────────────────────────────────────────
   const [openf1Syncing, setOpenf1Syncing] = useState(false)
@@ -144,19 +139,6 @@ export default function ReglagesSuperAdmin({ addToast }) {
       addToast('Résultat supprimé', 'info')
     } catch {
       addToast('Erreur', 'error')
-    }
-  }
-
-  const handleClearDatabase = async () => {
-    setClearing(true)
-    try {
-      await clearDatabase()
-      addToast('Base de données vidée', 'warning')
-    } catch {
-      addToast('Erreur', 'error')
-    } finally {
-      setClearing(false)
-      setConfirmClear(false)
     }
   }
 
@@ -409,38 +391,8 @@ export default function ReglagesSuperAdmin({ addToast }) {
               </p>
             )}
           </div>
-
-          {/* ── ZONE DANGEREUSE ── */}
-          <div
-            className="mt-4 rounded-2xl border p-4 space-y-3"
-            style={{ backgroundColor: 'rgba(127,0,0,0.12)', borderColor: 'rgba(200,0,0,0.25)' }}
-          >
-            <p className="text-xs font-black uppercase tracking-widest text-red-400">⚠️ Zone Dangereuse</p>
-            <button
-              onClick={() => setConfirmClear(true)}
-              disabled={clearing}
-              className="w-full flex items-center gap-3 p-3 rounded-xl border border-red-700/30 bg-red-900/20 active:opacity-70 text-left"
-            >
-              <span className="text-xl">🗑️</span>
-              <div>
-                <p className="font-bold text-sm text-red-400">{clearing ? 'Suppression…' : 'Vider la BDD'}</p>
-                <p className="text-xs text-muted">Supprime tout — irréversible</p>
-              </div>
-            </button>
-          </div>
         </div>
       )}
-
-      {/* ── CONFIRM MODALS ── */}
-      <ConfirmModal
-        isOpen={confirmClear}
-        title="Vider la base de données ?"
-        message="⚠️ Cette action supprimera définitivement tous les pronos, résultats et scores de la saison. IRRÉVERSIBLE. Es-tu sûr ?"
-        confirmLabel={clearing ? 'Suppression…' : 'Tout supprimer'}
-        danger
-        onConfirm={handleClearDatabase}
-        onCancel={() => setConfirmClear(false)}
-      />
 
       {/* ── BOTTOM SHEETS ── */}
       <BottomSheet
