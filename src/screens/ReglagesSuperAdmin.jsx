@@ -21,6 +21,10 @@ export default function ReglagesSuperAdmin({ addToast }) {
   const [resultPosition, setResultPosition] = useState(null)
   const [driverPickerOpen, setDriverPickerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [confirmOverwriteResult, setConfirmOverwriteResult] = useState(false)
+
+  // ── Danger confirm modals ────────────────────────────────────────────────
+  const [resetTarget, setResetTarget] = useState(null) // race pending a reset confirmation
 
   // ── OpenF1 sync ───────────────────────────────────────────────────────────
   const [openf1Syncing, setOpenf1Syncing] = useState(false)
@@ -129,8 +133,22 @@ export default function ReglagesSuperAdmin({ addToast }) {
     }
   }
 
+  // Triggered by the "Valider le résultat" button — only asks for
+  // confirmation when this would overwrite an already-official, already-
+  // scored result (status 'completed' with a result already set). A first
+  // save on a race that isn't completed yet stays a single tap: that's the
+  // normal, frequent action, not the risky one.
+  const handleValidateResult = () => {
+    if (!resultDraft.P1 || !resultDraft.P2 || !resultDraft.P3 || !selectedRace) return
+    const wouldOverwriteOfficialResult = selectedRace.status === 'completed' && !!selectedRace.result
+    if (wouldOverwriteOfficialResult) {
+      setConfirmOverwriteResult(true)
+      return
+    }
+    saveResult()
+  }
+
   const resetRaceResult = async (race) => {
-    if (!confirm(`Réinitialiser le résultat de ${race.name} ?`)) return
     try {
       // Same _id-stripping as saveResult() above — client-only artifact,
       // must never be written back to Firestore.
@@ -345,7 +363,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
                     </button>
                     {race.result && (
                       <button
-                        onClick={() => resetRaceResult(race)}
+                        onClick={() => setResetTarget(race)}
                         className="text-xs text-muted font-bold px-3 py-1.5 rounded-lg border border-border"
                       >
                         Reset
@@ -478,7 +496,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
               })}
             </div>
             <button
-              onClick={saveResult}
+              onClick={handleValidateResult}
               disabled={!resultDraft.P1 || !resultDraft.P2 || !resultDraft.P3 || saving}
               className={`w-full py-4 rounded-xl font-black text-lg transition-all active:scale-95 ${
                 resultDraft.P1 && resultDraft.P2 && resultDraft.P3 && !saving
@@ -532,6 +550,38 @@ export default function ReglagesSuperAdmin({ addToast }) {
           ))}
         </div>
       </BottomSheet>
+
+      {/* ── CONFIRM MODALS ── */}
+      <ConfirmModal
+        isOpen={!!resetTarget}
+        title="Réinitialiser ce résultat ?"
+        message={resetTarget
+          ? `Le résultat actuel du GP ${resetTarget.name} sera effacé, et les points déjà calculés pour ce GP seront recalculés (donc perdus) pour tous les joueurs de toutes les ligues.`
+          : ''}
+        confirmLabel="Réinitialiser"
+        danger
+        onConfirm={async () => {
+          const race = resetTarget
+          setResetTarget(null)
+          if (race) await resetRaceResult(race)
+        }}
+        onCancel={() => setResetTarget(null)}
+      />
+
+      <ConfirmModal
+        isOpen={confirmOverwriteResult}
+        title="Remplacer le résultat officiel ?"
+        message={selectedRace
+          ? `Un résultat officiel existe déjà pour le GP ${selectedRace.name} et a déjà été scoré. Le remplacer recalculera les points pour tous les joueurs concernés.`
+          : ''}
+        confirmLabel="Remplacer"
+        danger
+        onConfirm={() => {
+          setConfirmOverwriteResult(false)
+          saveResult()
+        }}
+        onCancel={() => setConfirmOverwriteResult(false)}
+      />
     </div>
   )
 }
