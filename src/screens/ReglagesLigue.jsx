@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
+import { doc, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { LogOut, Trash2, Copy, Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { db } from '../firebase'
 import { useCollection, useDocument, where, upsertDoc, deleteDocument } from '../hooks/useFirestore'
 import { getProfile } from '../utils/profiles'
 import { parseAmount } from '../utils/leagues'
@@ -254,6 +256,72 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
     }
   }
 
+  // ── Bannir / réintégrer ──────────────────────────────────────────────────
+  // "Bannir" est plus engageant que "Retirer" (empêche tout retour sans
+  // action explicite d'un admin) : même mécanisme de confirmation que
+  // "Retirer" (sheet dédiée + target/loading/error state), pas un clic direct.
+  const [banTarget, setBanTarget] = useState(null) // player doc
+  const [banning, setBanning] = useState(false)
+  const [banError, setBanError] = useState('')
+
+  const openBanSheet = (player) => {
+    setBanError('')
+    setBanTarget(player)
+  }
+
+  const closeBanSheet = () => {
+    setBanTarget(null)
+    setBanError('')
+  }
+
+  // Si le joueur banni est lui-même admin, on doit aussi le retirer de
+  // adminUids dans la MÊME opération — sinon il resterait capable de
+  // s'auto-réintégrer via le chemin admin (isLeagueAdmin() sur players,
+  // qui autorise déjà l'écriture de n'importe quel champ et qu'on ne peut
+  // pas restreindre "sauf sur soi-même" sans casser la gestion légitime de
+  // son propre profil). On utilise un writeBatch plutôt que deux upsertDoc
+  // séquentiels : Firestore garantit qu'un batch est tout-ou-rien, donc
+  // aucun état intermédiaire (banni mais encore admin) n'est jamais commis.
+  const handleBanConfirm = async () => {
+    if (!banTarget) return
+    setBanning(true)
+    setBanError('')
+    const wasAdmin = !!banTarget.authUid
+      && Array.isArray(league?.adminUids)
+      && league.adminUids.includes(banTarget.authUid)
+    try {
+      const batch = writeBatch(db)
+      batch.set(
+        doc(db, 'players', banTarget._id),
+        { active: false, banned: true, updatedAt: serverTimestamp() },
+        { merge: true }
+      )
+      if (wasAdmin) {
+        batch.set(
+          doc(db, 'leagues', leagueId),
+          { adminUids: league.adminUids.filter(uid => uid !== banTarget.authUid), updatedAt: serverTimestamp() },
+          { merge: true }
+        )
+      }
+      await batch.commit()
+      addToast?.(wasAdmin ? 'Joueur banni et retiré des administrateurs' : 'Joueur banni', 'info')
+      closeBanSheet()
+    } catch {
+      setBanError('Erreur lors du bannissement — aucune modification appliquée. Réessayez.')
+    } finally {
+      setBanning(false)
+    }
+  }
+
+  const reinstatePlayer = async (player) => {
+    try {
+      await upsertDoc('players', player._id, { banned: false })
+      addToast?.('Joueur réintégré', 'info')
+    } catch {
+      addToast?.('Erreur lors de la réintégration. Réessayez.', 'error')
+    }
+  }
+
   // ── Co-administration (nommer / démettre) ────────────────────────────────
   // Même mécanisme que "Retirer" : upsertDoc directement sur le document
   // concerné (ici leagues/{leagueId}, champ adminUids). La règle Firestore
@@ -407,7 +475,7 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
         <div className="card p-5 space-y-3">
           <p className="section-title">Joueurs de la ligue</p>
           <div className="space-y-2">
-            {players.filter(p => p.active !== false).map(player => {
+            {players.map(player => {
               const identity = getProfile(profiles, player)
               const avatar = String(identity?.avatar ?? '🏎️')
               const color = String(identity?.color ?? '#6B6B8A')
@@ -416,13 +484,23 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
               const isPlayerAdmin = !!player.authUid
                 && Array.isArray(league?.adminUids)
                 && league.adminUids.includes(player.authUid)
+              const isActive = player.active !== false
+              const isBanned = player.banned === true
               return (
-                <div key={player._id} className="flex items-center gap-3 p-2 rounded-lg bg-surfaceHigh/30">
+                <div
+                  key={player._id}
+                  className={`flex items-center gap-3 p-2 rounded-lg bg-surfaceHigh/30 ${isActive ? '' : 'opacity-60'}`}
+                >
                   <span className="text-xl leading-none">{avatar}</span>
                   <span className="flex-1 font-bold text-sm truncate" style={{ color }}>
                     {displayName}
                     {isSelf && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
                     {isPlayerAdmin && <span className="text-xs text-accent font-normal ml-1">· admin</span>}
+                    {!isActive && (
+                      <span className={`text-xs font-normal ml-1 ${isBanned ? 'text-red-400' : 'text-muted'}`}>
+                        · {isBanned ? 'Banni' : 'Parti'}
+                      </span>
+                    )}
                   </span>
                   {isLeagueAdmin && !isSelf && isPlayerAdmin && !isSoleAdmin && (
                     <button
@@ -432,7 +510,7 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                       Démettre
                     </button>
                   )}
-                  {isLeagueAdmin && !isSelf && !isPlayerAdmin && player.authUid && (
+                  {isLeagueAdmin && !isSelf && !isPlayerAdmin && player.authUid && isActive && (
                     <button
                       onClick={() => promoteToAdmin(player)}
                       className="text-xs font-bold text-accent px-3 py-1.5 rounded-lg border border-accent/30 hover:bg-accent/10 transition-colors shrink-0"
@@ -440,12 +518,28 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                       Nommer admin
                     </button>
                   )}
-                  {isLeagueAdmin && !isSelf && (
+                  {isLeagueAdmin && !isSelf && isActive && (
                     <button
                       onClick={() => openRemoveSheet(player)}
                       className="text-xs font-bold text-red-400 px-3 py-1.5 rounded-lg border border-red-700/30 hover:bg-red-900/20 transition-colors shrink-0"
                     >
                       Retirer
+                    </button>
+                  )}
+                  {isLeagueAdmin && !isSelf && !isBanned && (
+                    <button
+                      onClick={() => openBanSheet(player)}
+                      className="text-xs font-bold text-white bg-red-700 px-3 py-1.5 rounded-lg hover:bg-red-600 transition-colors shrink-0"
+                    >
+                      Bannir
+                    </button>
+                  )}
+                  {isLeagueAdmin && !isSelf && isBanned && (
+                    <button
+                      onClick={() => reinstatePlayer(player)}
+                      className="text-xs font-bold text-accent px-3 py-1.5 rounded-lg border border-accent/30 hover:bg-accent/10 transition-colors shrink-0"
+                    >
+                      Réintégrer
                     </button>
                   )}
                 </div>
@@ -698,6 +792,46 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
               }`}
             >
               {removing ? 'Retrait…' : 'Retirer'}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+
+      <BottomSheet isOpen={!!banTarget} onClose={closeBanSheet} title="Bannir ce joueur ?">
+        <div className="p-5 pb-10 space-y-4">
+          <p className="text-sm text-muted leading-relaxed">
+            Bannir{' '}
+            <strong className="text-white">
+              {String(getProfile(profiles, banTarget)?.displayName ?? banTarget?.id)}
+            </strong>{' '}
+            de la ligue ?
+          </p>
+          <p className="text-sm text-red-400 font-bold leading-relaxed">
+            ⛔ Contrairement à "Retirer", il ne pourra pas revenir en rejoignant à nouveau avec le
+            code d'invitation — il restera bloqué tant qu'un admin ne cliquera pas explicitement
+            sur "Réintégrer".
+            {!!banTarget?.authUid && Array.isArray(league?.adminUids) && league.adminUids.includes(banTarget.authUid) && (
+              ' Il perdra aussi son statut de co-administrateur.'
+            )}
+          </p>
+          {banError && (
+            <p className="text-accent text-xs font-bold">{banError}</p>
+          )}
+          <div className="flex gap-3">
+            <button
+              onClick={closeBanSheet}
+              className="flex-1 py-3 rounded-xl border border-border text-sm font-bold"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={handleBanConfirm}
+              disabled={banning}
+              className={`flex-1 py-3 rounded-xl text-sm font-black text-white ${
+                banning ? 'bg-surfaceHigh text-muted cursor-not-allowed' : 'bg-red-700'
+              }`}
+            >
+              {banning ? 'Bannissement…' : 'Bannir'}
             </button>
           </div>
         </div>
