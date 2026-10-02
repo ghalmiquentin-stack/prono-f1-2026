@@ -23,20 +23,35 @@ function rankWithTies(sorted) {
 export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLeagueId, onSelectLeague, onActivateLeague, onClearActiveLeague, addToast }) {
   const { user } = useAuth()
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [adminCheckLoading, setAdminCheckLoading] = useState(true)
+  const [adminCheckError, setAdminCheckError] = useState(false)
 
-  // Check the super-admin custom claim on the connected Firebase user
+  // Check the super-admin custom claim on the connected Firebase user.
+  // Forces a token refresh (getIdTokenResult(true)) — the cached token can
+  // be up to ~1h stale and wouldn't reflect a role just granted via
+  // scripts/set-admin-claim.cjs until the next natural refresh/reconnection,
+  // leaving the button silently missing with no indication why.
   useEffect(() => {
     let cancelled = false
     if (!user) {
       setIsSuperAdmin(false)
+      setAdminCheckLoading(false)
+      setAdminCheckError(false)
       return
     }
-    user.getIdTokenResult()
+    setAdminCheckLoading(true)
+    setAdminCheckError(false)
+    user.getIdTokenResult(true)
       .then(tokenResult => {
-        if (!cancelled) setIsSuperAdmin(tokenResult.claims.admin === true)
+        if (cancelled) return
+        setIsSuperAdmin(tokenResult.claims.admin === true)
+        setAdminCheckLoading(false)
       })
       .catch(() => {
-        if (!cancelled) setIsSuperAdmin(false)
+        if (cancelled) return
+        setIsSuperAdmin(false)
+        setAdminCheckError(true)
+        setAdminCheckLoading(false)
       })
     return () => { cancelled = true }
   }, [user])
@@ -158,7 +173,16 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {isSuperAdmin && (
+          {adminCheckLoading ? (
+            <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted" aria-live="polite">
+              <ShieldCheck size={16} className="animate-pulse" />
+              Vérification...
+            </div>
+          ) : adminCheckError ? (
+            <p className="text-xs text-accent font-bold px-1" role="alert">
+              Impossible de vérifier vos droits, réessayez
+            </p>
+          ) : isSuperAdmin && (
             <button
               onClick={() => setActiveTab?.('admin')}
               className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-xs font-bold text-muted hover:text-white hover:border-muted transition-colors active:scale-95"
