@@ -42,13 +42,14 @@ function contentHeight(playerCount) {
 export default function Classement({ currentPlayerId, activeLeagueName, activeLeagueId, setActiveTab }) {
   const { user } = useAuth()
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
-  const { data: players, loading: playersLoading } = useCollection(user ? 'players' : null, leagueConstraint)
+  const { data: players, loading: playersLoading, error: playersError } = useCollection(user ? 'players' : null, leagueConstraint)
   const { data: profiles } = useCollection(user ? 'profiles' : null)
-  const { data: races, loading: racesLoading } = useCollection(user ? 'races' : null)
-  const { data: predictions } = useCollection(user ? 'predictions' : null, leagueConstraint)
-  const { data: penalties } = useCollection(user ? 'penalties' : null, leagueConstraint)
+  const { data: races, loading: racesLoading, error: racesError } = useCollection(user ? 'races' : null)
+  const { data: predictions, error: predictionsError } = useCollection(user ? 'predictions' : null, leagueConstraint)
+  const { data: penalties, error: penaltiesError } = useCollection(user ? 'penalties' : null, leagueConstraint)
 
   const loading = playersLoading || racesLoading
+  const hasReadError = !!(playersError || racesError || predictionsError || penaltiesError)
 
   const sortedRaces = useMemo(() =>
     [...races].sort((a, b) => a.id - b.id),
@@ -145,6 +146,23 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
           {' '}· {remainingRacesCount} restante{remainingRacesCount !== 1 ? 's' : ''}
         </p>
       </div>
+
+      {/* Read error banner — stays visible alongside whatever data did load */}
+      {hasReadError && (
+        <div className="px-5 mb-4">
+          <div className="card p-5 border-accent/40">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <p className="font-bold text-sm mb-1">Certaines données n'ont pas pu être chargées</p>
+                <p className="text-xs text-muted leading-relaxed">
+                  Les scores affichés peuvent être incomplets. Réessayez en rechargeant la page.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Podium visuel ── */}
       {Object.keys(podiumGroups).length >= 2 && (

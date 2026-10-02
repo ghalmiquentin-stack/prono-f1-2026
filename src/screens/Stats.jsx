@@ -32,13 +32,14 @@ function CustomTooltip({ active, payload, label }) {
 export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueId, setActiveTab }) {
   const { user } = useAuth()
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
-  const { data: players, loading: playersLoading } = useCollection(user ? 'players' : null, leagueConstraint)
+  const { data: players, loading: playersLoading, error: playersError } = useCollection(user ? 'players' : null, leagueConstraint)
   const { data: profiles } = useCollection(user ? 'profiles' : null)
-  const { data: races, loading: racesLoading } = useCollection(user ? 'races' : null)
-  const { data: predictions } = useCollection(user ? 'predictions' : null, leagueConstraint)
-  const { data: penalties } = useCollection(user ? 'penalties' : null, leagueConstraint)
+  const { data: races, loading: racesLoading, error: racesError } = useCollection(user ? 'races' : null)
+  const { data: predictions, error: predictionsError } = useCollection(user ? 'predictions' : null, leagueConstraint)
+  const { data: penalties, error: penaltiesError } = useCollection(user ? 'penalties' : null, leagueConstraint)
 
   const loading = playersLoading || racesLoading
+  const hasReadError = !!(playersError || racesError || predictionsError || penaltiesError)
 
   const sortedRaces = useMemo(() =>
     [...races].sort((a, b) => a.id - b.id),
@@ -239,6 +240,23 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
         <h1 className="text-2xl font-black tracking-tight">Statistiques</h1>
         <p className="text-sm text-muted">{completedRaces.length} course{completedRaces.length > 1 ? 's' : ''} analysée{completedRaces.length > 1 ? 's' : ''}</p>
       </div>
+
+      {/* Read error banner — stays visible alongside whatever data did load */}
+      {hasReadError && (
+        <div className="px-5 mb-6">
+          <div className="card p-5 border-accent/40">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <p className="font-bold text-sm mb-1">Certaines données n'ont pas pu être chargées</p>
+                <p className="text-xs text-muted leading-relaxed">
+                  Les scores affichés peuvent être incomplets. Réessayez en rechargeant la page.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Player cards */}
       <div className="px-5 mb-6">
