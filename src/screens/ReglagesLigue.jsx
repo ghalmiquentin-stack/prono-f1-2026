@@ -254,6 +254,34 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
     }
   }
 
+  // ── Co-administration (nommer / démettre) ────────────────────────────────
+  // Même mécanisme que "Retirer" : upsertDoc directement sur le document
+  // concerné (ici leagues/{leagueId}, champ adminUids). La règle Firestore
+  // interdit déjà l'auto-démotion et la suppression du dernier admin ; le
+  // catch ci-dessous ne sert qu'à prévenir plutôt que d'échouer en silence
+  // si jamais le bouton était affiché dans un état incohérent.
+  const promoteToAdmin = async (player) => {
+    if (!league || !player?.authUid) return
+    try {
+      await upsertDoc('leagues', leagueId, { adminUids: [...league.adminUids, player.authUid] })
+      addToast?.('Co-administrateur nommé', 'info')
+    } catch {
+      addToast?.('Erreur lors de la nomination. Réessayez.', 'error')
+    }
+  }
+
+  const demoteAdmin = async (player) => {
+    if (!league || !player?.authUid) return
+    try {
+      await upsertDoc('leagues', leagueId, {
+        adminUids: league.adminUids.filter(uid => uid !== player.authUid),
+      })
+      addToast?.('Administrateur démis', 'info')
+    } catch {
+      addToast?.("Erreur : impossible de démettre cet administrateur.", 'error')
+    }
+  }
+
   // ── Quitter / supprimer la ligue ─────────────────────────────────────────
   const [leaveSheetOpen, setLeaveSheetOpen] = useState(false)
   const [deleteSheetOpen, setDeleteSheetOpen] = useState(false)
@@ -385,13 +413,33 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
               const color = String(identity?.color ?? '#6B6B8A')
               const displayName = String(identity?.displayName ?? player.id)
               const isSelf = player._id === myActiveProfile?._id
+              const isPlayerAdmin = !!player.authUid
+                && Array.isArray(league?.adminUids)
+                && league.adminUids.includes(player.authUid)
               return (
                 <div key={player._id} className="flex items-center gap-3 p-2 rounded-lg bg-surfaceHigh/30">
                   <span className="text-xl leading-none">{avatar}</span>
                   <span className="flex-1 font-bold text-sm truncate" style={{ color }}>
                     {displayName}
                     {isSelf && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
+                    {isPlayerAdmin && <span className="text-xs text-accent font-normal ml-1">· admin</span>}
                   </span>
+                  {isLeagueAdmin && !isSelf && isPlayerAdmin && !isSoleAdmin && (
+                    <button
+                      onClick={() => demoteAdmin(player)}
+                      className="text-xs font-bold text-muted px-3 py-1.5 rounded-lg border border-border hover:bg-surfaceHigh transition-colors shrink-0"
+                    >
+                      Démettre
+                    </button>
+                  )}
+                  {isLeagueAdmin && !isSelf && !isPlayerAdmin && player.authUid && (
+                    <button
+                      onClick={() => promoteToAdmin(player)}
+                      className="text-xs font-bold text-accent px-3 py-1.5 rounded-lg border border-accent/30 hover:bg-accent/10 transition-colors shrink-0"
+                    >
+                      Nommer admin
+                    </button>
+                  )}
                   {isLeagueAdmin && !isSelf && (
                     <button
                       onClick={() => openRemoveSheet(player)}

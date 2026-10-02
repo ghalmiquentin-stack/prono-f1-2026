@@ -56,7 +56,20 @@ service cloud.firestore {
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.adminUids == [request.auth.uid];
 
-      allow update: if isSuperAdmin() || isLeagueAdmin(leagueId);
+      // Co-administration : n'importe quel admin peut modifier adminUids
+      // (nommer/démettre), mais uniquement si l'auteur de l'écriture reste
+      // lui-même présent dans le tableau résultant. Cette seule condition
+      // empêche à la fois l'auto-démotion et la suppression du dernier
+      // admin restant, puisque le seul admin capable d'appeler cette règle
+      // quand adminUids.size() == 1 est cet admin lui-même.
+      allow update: if isSuperAdmin()
+        || (
+          isLeagueAdmin(leagueId)
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['adminUids'])
+            || request.auth.uid in request.resource.data.adminUids
+          )
+        );
 
       allow delete: if isSuperAdmin() || isLeagueAdmin(leagueId);
     }
