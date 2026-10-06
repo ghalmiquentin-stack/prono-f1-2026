@@ -23,8 +23,13 @@ const db = admin.firestore();
 // Only start checking once a race has been running for a while (official
 // results aren't posted instantly), and give up marking it after a longer
 // delay so a genuinely stuck/unmappable race doesn't get retried forever.
+// GIVE_UP_AFTER_MS counts from the SCHEDULED raceStartAt, not the real
+// start — widened from 3h30 to 24h after the Bahreïn (Sepang) incident
+// (races/17.5): a real-world start delay plus OpenF1's own publication lag
+// (~3h19 observed on that GP's qualifying) together exceeded the old 3h30
+// budget, so the function gave up before session_result ever existed.
 const START_CHECKING_AFTER_MS = 2 * 60 * 60 * 1000; // 2h
-const GIVE_UP_AFTER_MS = 3.5 * 60 * 60 * 1000; // 3h30
+const GIVE_UP_AFTER_MS = 24 * 60 * 60 * 1000; // 24h
 
 // Intervalle de 15 minutes : compromis entre réactivité (détecter une
 // publication OpenF1 rapidement) et sobriété (éviter des appels API et des
@@ -66,7 +71,7 @@ exports.autoFetchRaceResults = onSchedule(
       if (elapsedMs >= GIVE_UP_AFTER_MS) {
         if (race.autoFetchGaveUp !== true) {
           await raceDoc.ref.update({ autoFetchGaveUp: true });
-          logger.warn(`[autoFetchRaceResults] Abandon pour ${race.name} (id=${race.id}) — plus de 3h30 sans résultat publié. autoFetchGaveUp posé.`);
+          logger.warn(`[autoFetchRaceResults] Abandon pour ${race.name} (id=${race.id}) — plus de 24h sans résultat publié. autoFetchGaveUp posé.`);
         } else {
           logger.info(`[autoFetchRaceResults] ${race.name} (id=${race.id}) déjà marquée autoFetchGaveUp, ignorée.`);
         }

@@ -36,7 +36,7 @@ const { formatLapDuration } = require('./formatLapDuration')
  *
  * @param {FirebaseFirestore.Firestore} db
  * @param {object} race - données du document races/{id} (id, name, city, meeting_key...)
- * @returns {Promise<{year: number, P1: object|null, P2: object|null, P3: object|null, fetchedAt: string} | null>}
+ * @returns {Promise<{year: number, P1: object|null, P2: object|null, P3: object|null, fetchedAt: string, source: 'auto'} | null>}
  */
 async function fetchQualifying(db, race) {
   const meetingKey = await resolveMeetingKey(db, race)
@@ -104,6 +104,14 @@ async function fetchQualifying(db, race) {
     P2,
     P3,
     fetchedAt: new Date().toISOString(),
+    // Provenance marker — absent from the manual fetch path
+    // (ReglagesSuperAdmin.jsx), which writes its own `qualifying` object
+    // without this field. Lets an admin tell, after the fact, whether a
+    // given grid came from this scheduled function or a manual click —
+    // the Bahreïn (Sepang) incident (races/17.5) showed a manual re-fetch
+    // can silently overwrite an already-correct automatic one with no way
+    // to tell afterward which one is currently stored.
+    source: 'auto',
   }
 }
 
