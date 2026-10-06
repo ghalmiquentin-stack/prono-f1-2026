@@ -40,6 +40,10 @@ export default function ReglagesSuperAdmin({ addToast }) {
   // player-facing PredictionSheet modal (which only ever reads this data).
   const [openf1QualFetching, setOpenf1QualFetching] = useState(false)
   const [openf1QualMsg, setOpenf1QualMsg] = useState(null)
+  // Holds a freshly-fetched qualifying object awaiting confirmation when it
+  // would overwrite an existing races/{id}.qualifying — null otherwise.
+  // Same "confirm only when overwriting" pattern as confirmOverwriteResult.
+  const [pendingQualifying, setPendingQualifying] = useState(null)
 
   // ── Firestore ────────────────────────────────────────────────────────────
   const { data: races } = useCollection(user ? 'races' : null)
@@ -262,13 +266,27 @@ export default function ReglagesSuperAdmin({ addToast }) {
       const sessRes = await fetch(
         `https://api.openf1.org/v1/sessions?meeting_key=${meetingKey}&session_name=Qualifying`
       )
-      const sessions = await sessRes.json()
-      const qualSession = sessions?.[0]
-      if (!qualSession) throw new Error('Session qualifications introuvable')
+      const rawSessions = await sessRes.json()
+      // Same ambiguity guard as the Cloud Function auto path
+      // (functions/lib/fetchQualifying.js) — a Sprint weekend's meeting
+      // also has a "Sprint Qualifying" session; never guess which one to
+      // take. Confirmed via OpenF1 (meetings already played in 2026,
+      // e.g. Grande-Bretagne/Pays-Bas) that `session_name` reliably
+      // distinguishes the two — filtering on the exact string is safe.
+      const sessions = (rawSessions ?? []).filter(s => s.session_name === 'Qualifying')
+      if (sessions.length !== 1) {
+        throw new Error(
+          sessions.length === 0
+            ? 'Session "Qualifying" introuvable (pas encore publiée par OpenF1)'
+            : `${sessions.length} sessions "Qualifying" trouvées — ambiguïté, abandon`
+        )
+      }
+      const qualSession = sessions[0]
 
       const gridRes = await fetch(
         `https://api.openf1.org/v1/starting_grid?session_key=${qualSession.session_key}&position<=3`
       )
+      if (!gridRes.ok) throw new Error(`OpenF1 API error: ${gridRes.status} (starting_grid)`)
       const grid = await gridRes.json()
       grid.sort((a, b) => a.position - b.position)
 
@@ -287,19 +305,50 @@ export default function ReglagesSuperAdmin({ addToast }) {
         }
       }
 
+      const P1 = buildEntry(1)
+      const P2 = buildEntry(2)
+      const P3 = buildEntry(3)
+      // Same completeness guard as fetchQualifying.js: never write a
+      // partial grid, retry later instead.
+      if (!P1 || !P2 || !P3) {
+        throw new Error('Grille de qualification incomplète — abandon, rien enregistré')
+      }
+
       const qualifying = {
         year: new Date().getFullYear(),
-        P1: buildEntry(1),
-        P2: buildEntry(2),
-        P3: buildEntry(3),
+        P1, P2, P3,
         fetchedAt: new Date().toISOString(),
+        source: 'manual',
       }
+
+      // A qualifying grid already exists for this race — ask before
+      // overwriting instead of silently replacing it (same "confirm only
+      // when overwriting" pattern as handleValidateResult/saveResult
+      // above). Hold the computed result and let the ConfirmModal below
+      // trigger the actual write.
+      if (selectedRace.qualifying) {
+        setPendingQualifying(qualifying)
+        return
+      }
+
       await upsertDoc('races', String(selectedRace.id), { qualifying })
       setOpenf1QualMsg({ type: 'success', text: 'Qualifications récupérées' })
     } catch (err) {
       setOpenf1QualMsg({ type: 'error', text: err.message })
     } finally {
       setOpenf1QualFetching(false)
+    }
+  }
+
+  const confirmOverwriteQualifying = async () => {
+    if (!pendingQualifying || !selectedRace) return
+    try {
+      await upsertDoc('races', String(selectedRace.id), { qualifying: pendingQualifying })
+      setOpenf1QualMsg({ type: 'success', text: 'Qualifications récupérées' })
+    } catch (err) {
+      setOpenf1QualMsg({ type: 'error', text: err.message })
+    } finally {
+      setPendingQualifying(null)
     }
   }
 
@@ -457,6 +506,20 @@ export default function ReglagesSuperAdmin({ addToast }) {
                 <p className="text-xs text-muted">Enregistre le top 3 des qualifications</p>
               </div>
             </button>
+            {/* Provenance badge — mirrors the "Récupéré automatiquement (OpenF1)"
+                badge in the Résultats officiels list above. No badge at all
+                for pre-existing data with no `source` field. */}
+            {selectedRace?.qualifying?.source && (
+              <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                selectedRace.qualifying.source === 'auto'
+                  ? 'bg-green-500/20 text-green-400'
+                  : 'bg-surfaceHigh text-muted'
+              }`}>
+                {selectedRace.qualifying.source === 'auto' ? 'Récupérées automatiquement' : 'Saisies manuellement'}
+                {selectedRace.qualifying.fetchedAt &&
+                  ` · ${new Date(selectedRace.qualifying.fetchedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+              </span>
+            )}
             {openf1QualMsg && (
               <p className={`text-xs font-bold px-3 py-2 rounded-lg -mt-2 ${
                 openf1QualMsg.type === 'success'
@@ -581,6 +644,27 @@ export default function ReglagesSuperAdmin({ addToast }) {
           saveResult()
         }}
         onCancel={() => setConfirmOverwriteResult(false)}
+      />
+
+      <ConfirmModal
+        isOpen={!!pendingQualifying}
+        title="Remplacer les qualifications ?"
+        message={selectedRace?.qualifying
+          ? `Une grille de qualification existe déjà pour le GP ${selectedRace.name}` +
+            (selectedRace.qualifying.source === 'auto'
+              ? ' (récupérée automatiquement'
+              : selectedRace.qualifying.source === 'manual'
+                ? ' (saisie manuellement'
+                : ' (récupération') +
+            (selectedRace.qualifying.fetchedAt
+              ? ` le ${new Date(selectedRace.qualifying.fetchedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })})`
+              : ')') +
+            '. La remplacer écrasera définitivement cette donnée.'
+          : ''}
+        confirmLabel="Remplacer"
+        danger
+        onConfirm={confirmOverwriteQualifying}
+        onCancel={() => setPendingQualifying(null)}
       />
     </div>
   )

@@ -26,7 +26,7 @@ export default function Countdown({ targetDate, label, compact = false }) {
   if (!timeLeft) {
     return (
       <div className="text-center">
-        <span className="text-accent font-bold text-sm">Course en cours !</span>
+        <span className="text-accent font-bold text-sm">Pronostics verrouillés</span>
       </div>
     )
   }
