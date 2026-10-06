@@ -92,9 +92,14 @@ service cloud.firestore {
         || isLeagueAdmin(resource.data.leagueId)
         // Self, toggling membership status only (LeaveLeagueSheet.jsx,
         // RejoindreLigue.jsx) — never any other field on one's own doc.
+        // A banned player cannot self-reactivate (set active: true) even
+        // via a direct Firestore call ; only an admin can clear `banned`
+        // (handled by the isLeagueAdmin() disjunct above, no change needed
+        // there — it already allows writing any field).
         || (
           resource.data.authUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'updatedAt'])
+          && !(resource.data.banned == true && request.resource.data.active == true)
         )
         || (
           resource.data.authUid == null
