@@ -3,8 +3,9 @@ import { useDocument, upsertDoc } from '../hooks/useFirestore'
 import { calculateRaceScore, detailPoints } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
 import { getModificationCount } from '../utils/predictions'
+import { useRaceTiming } from '../hooks/useRaceTiming'
 import { summarizePenalties, getPenaltyAmount } from '../utils/penalties'
-import { formatRaceLocalTime } from '../utils/races'
+import { formatRaceLocalTime, raceStartInstant } from '../utils/races'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
 import { getDriverPhoto } from '../utils/drivers'
 import BottomSheet from './BottomSheet'
@@ -68,6 +69,18 @@ export default function PredictionSheet({
 
   const getMyPrediction = (raceId) =>
     predictions.find(p => p.playerId === currentPlayerId && p.raceId === raceId)
+
+  // Display/input lock only — the server (firestore.rules) is the real gate.
+  // Read-only once the GP has started, unless the admin granted this player's
+  // existing prediction a manual unlock. Flips by itself at T (hook timer).
+  const { started: raceStarted } = useRaceTiming(currentRace)
+  const myPred = currentRace ? getMyPrediction(currentRace.id) : null
+  const locked = raceStarted && myPred?.manualUnlockOverride !== true
+
+  // The driver picker may be open when the start is crossed: close it.
+  useEffect(() => {
+    if (locked) { setDriverPickerOpen(false); setActivePosition(null) }
+  }, [locked])
 
   // Re-initialize the draft/tab every time the sheet transitions to open —
   // mirrors the previous openRaceSheet() click handler, which always ran
@@ -232,7 +245,7 @@ export default function PredictionSheet({
                 </div>
                 {currentRace.status === 'upcoming' && (
                   <Countdown
-                    targetDate={`${currentRace.date}T${currentRace.raceTimeUTC ?? '12:00'}:00Z`}
+                    targetDate={raceStartInstant(currentRace)}
                     compact
                   />
                 )}
@@ -358,7 +371,7 @@ export default function PredictionSheet({
                   <div className="space-y-5">
                     <div>
                       <p className="section-title">Votre pronostic podium</p>
-                      {existingPred && (
+                      {existingPred && !locked && (
                         modPenaltyEnabled ? (
                           <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                             <span className="text-sm">⚠️</span>
@@ -390,10 +403,11 @@ export default function PredictionSheet({
                           return (
                             <button
                               key={pos}
+                              disabled={locked}
                               onClick={() => { setActivePosition(pos); setDriverPickerOpen(true) }}
-                              className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 transition-all active:scale-[0.98] ${
-                                driver ? '' : 'border-dashed border-border'
-                              }`}
+                              className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${
+                                locked ? 'cursor-not-allowed opacity-70' : 'active:scale-[0.98]'
+                              } ${driver ? '' : 'border-dashed border-border'}`}
                               style={driver ? { borderColor: teamColor + '80', backgroundColor: teamColor + '15' } : {}}
                             >
                               <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>{i + 1}</div>
@@ -410,10 +424,12 @@ export default function PredictionSheet({
                                     <p className="text-xs text-muted">{getDriverTeam(driver)?.name}</p>
                                   </div>
                                   <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: teamColor }} />
-                                  <span
-                                    className="text-muted text-sm"
-                                    onClick={e => { e.stopPropagation(); clearPosition(pos) }}
-                                  >✕</span>
+                                  {!locked && (
+                                    <span
+                                      className="text-muted text-sm"
+                                      onClick={e => { e.stopPropagation(); clearPosition(pos) }}
+                                    >✕</span>
+                                  )}
                                 </>
                               ) : (
                                 <span className="text-muted text-sm flex-1 text-left">
@@ -425,15 +441,21 @@ export default function PredictionSheet({
                         })}
                       </div>
                     </div>
-                    <button
-                      onClick={savePrediction}
-                      disabled={!canSave || saving}
-                      className={`w-full py-4 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
-                        canSave && !saving ? 'bg-accent text-white shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                      }`}
-                    >
-                      {saving ? 'Enregistrement...' : canSave ? 'Valider mon pronostic' : 'Complétez le podium'}
-                    </button>
+                    {locked ? (
+                      <p className="text-center text-sm text-accent font-bold p-3 bg-accent/10 border border-accent/30 rounded-xl">
+                        Pronostics verrouillés : le Grand Prix a commencé
+                      </p>
+                    ) : (
+                      <button
+                        onClick={savePrediction}
+                        disabled={!canSave || saving}
+                        className={`w-full py-4 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
+                          canSave && !saving ? 'bg-accent text-white shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
+                        }`}
+                      >
+                        {saving ? 'Enregistrement...' : canSave ? 'Valider mon pronostic' : 'Complétez le podium'}
+                      </button>
+                    )}
                   </div>
                 )
               })()}

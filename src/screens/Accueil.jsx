@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { Pencil, Clock } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { useRaceTiming } from '../hooks/useRaceTiming'
 import { useCollection, useDocument, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getTeamColor } from '../data/drivers'
 import { getProfile } from '../utils/profiles'
-import { hasRaceStarted, formatRaceLocalTime } from '../utils/races'
+import { hasRaceStarted, formatRaceLocalTime, raceStartInstant } from '../utils/races'
 import { getModificationCount } from '../utils/predictions'
 import { summarizePenalties } from '../utils/penalties'
 import { getDriverPhoto } from '../utils/drivers'
@@ -124,6 +125,9 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
     [sortedRaces]
   )
 
+  // Flips by itself when the GP start is crossed (no reload needed).
+  const { started: raceStarted } = useRaceTiming(nextRace)
+
   const completedRaces = useMemo(() =>
     sortedRaces.filter(r => r.status === 'completed'),
     [sortedRaces]
@@ -173,24 +177,16 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
     return predictions.find(p => p.playerId === currentPlayerId && p.raceId === nextRace.id)
   }, [nextRace, predictions, currentPlayerId])
 
-  // Race start time: use raceTimeUTC from data, fallback to 12:00 UTC
-  const raceUtcTime = nextRace
-    ? `${nextRace.date}T${nextRace.raceTimeUTC ?? '12:00'}:00Z`
-    : null
+  // Race start instant (raceTimeUTC from data, 12:00 UTC fallback — see utils/races)
+  const raceStartMs = nextRace ? raceStartInstant(nextRace).getTime() : null
 
   const localTime = useMemo(() => {
-    if (!raceUtcTime) return null
+    if (raceStartMs == null) return null
     return {
-      time: formatLocalTime(raceUtcTime),
-      tzAbbr: getLocalTzAbbr(raceUtcTime),
+      time: formatLocalTime(raceStartMs),
+      tzAbbr: getLocalTzAbbr(raceStartMs),
     }
-  }, [raceUtcTime])
-
-  const isLocked = useMemo(() => {
-    if (!raceUtcTime) return false
-    const diff = new Date(raceUtcTime).getTime() - Date.now()
-    return diff >= 0 && diff < 60 * 60 * 1000
-  }, [raceUtcTime])
+  }, [raceStartMs])
 
   // "Hide predictions before race" league rule — lifts automatically once
   // the GP has actually started, same trigger as the countdown/auto-lock.
@@ -378,7 +374,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             </div>
 
             {/* Full countdown J / HH / MM / SEC */}
-            <Countdown targetDate={raceUtcTime} />
+            <Countdown targetDate={raceStartMs} />
 
             {/* Local start time — viewer's own timezone, same instant as the countdown */}
             {localTime && (
@@ -404,12 +400,18 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                     <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
                     <span className="text-sm text-accent font-semibold">Pas encore de pronostic</span>
                   </div>
-                  <button
-                    onClick={() => openRaceSheet(nextRace)}
-                    className="text-xs bg-accent text-white font-bold px-3 py-1.5 rounded-lg"
-                  >
-                    Pronostiquer →
-                  </button>
+                  {raceStarted ? (
+                    <span className="text-xs text-muted font-bold px-3 py-1.5">
+                      Pronostics verrouillés
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => openRaceSheet(nextRace)}
+                      className="text-xs bg-accent text-white font-bold px-3 py-1.5 rounded-lg"
+                    >
+                      Pronostiquer →
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -480,9 +482,6 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             <div className="card p-5">
               <div className="flex items-center justify-between mb-3">
                 <span className="section-title">Pronostics — GP {nextRace.name} 🏁</span>
-                {isLocked && (
-                  <span className="text-xs text-red-400 font-bold">🔒 Verrouillés</span>
-                )}
               </div>
               <div className="space-y-3">
                 {(() => {

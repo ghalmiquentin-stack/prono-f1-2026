@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { useRaceTiming } from '../hooks/useRaceTiming'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateRaceScore, calculateAllSeasonScores } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
@@ -18,6 +19,16 @@ function formatDate(dateStr) {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('fr-FR', {
     day: 'numeric', month: 'short'
   })
+}
+
+// "+ Prono" call-to-action for an upcoming race the player hasn't predicted,
+// which turns into "Verrouillé" on its own once the GP start is crossed.
+// Own component so only this marker re-renders at T, not the whole list.
+function NoPronoMark({ race }) {
+  const { started } = useRaceTiming(race)
+  return started
+    ? <span className="text-muted font-bold text-xs">Verrouillé</span>
+    : <span className="text-accent font-bold text-xs animate-pulse">+ Prono</span>
 }
 
 function detailIcon(detail) {
@@ -139,7 +150,6 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
             const myPred = getMyPrediction(race.id)
             const myPens = getMyPenalties(race.id)
             const myScoreData = isCompleted ? getMyScoreData(race) : null
-            const raceTarget = `${race.date}T${race.raceTimeUTC ?? '12:00'}:00Z`
 
             return (
               <button
@@ -204,7 +214,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                       myPred ? (
                         <span className="text-green-400 font-bold text-xs">✓ Soumis</span>
                       ) : (
-                        <span className="text-accent font-bold text-xs animate-pulse">+ Prono</span>
+                        <NoPronoMark race={race} />
                       )
                     )}
                   </div>
