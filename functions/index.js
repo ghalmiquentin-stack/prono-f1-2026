@@ -4,6 +4,7 @@ const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const { fetchRaceResult } = require("./lib/fetchRaceResult");
 const { fetchQualifying } = require("./lib/fetchQualifying");
+const { syncQualifyingStarts } = require("./lib/qualifyingStart");
 
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
@@ -132,7 +133,7 @@ const QUALIFYING_WINDOW_MS = 2 * 24 * 60 * 60 * 1000; // 2 jours
 // Même région que la base Firestore du projet (Paris) — évite la latence
 // et les coûts de transfert de données inter-région.
 exports.autoFetchQualifying = onSchedule(
-  { schedule: "every 15 minutes", region: "europe-west9" },
+  { schedule: "every 15 minutes", region: "europe-west9", timeoutSeconds: 120 },
   async () => {
     const now = Date.now();
     logger.info("[autoFetchQualifying] Démarrage du passage planifié.");
@@ -195,6 +196,22 @@ exports.autoFetchQualifying = onSchedule(
       // autoFetchRaceResults / saveResult().
       await raceDoc.ref.update({ qualifying });
       logger.info(`[autoFetchQualifying] ✅ Qualifs écrites automatiquement pour ${race.name} (id=${race.id}).`);
+    }
+
+    // Heure de début de la séance "Qualifying" (qualifyingStartAt & co) —
+    // logique indépendante de race.qualifying, exécutée APRÈS la logique
+    // qualifs ci-dessus et isolée : toute erreur est journalisée (warn) et
+    // ne peut ni interrompre ni faire échouer ce passage. Voir
+    // lib/qualifyingStart.js.
+    try {
+      await syncQualifyingStarts({
+        db,
+        docs: upcomingSnap.docs,
+        logger,
+        toTimestamp: (date) => admin.firestore.Timestamp.fromDate(date),
+      });
+    } catch (err) {
+      logger.warn(`[qualifyingStart] Erreur inattendue (ignorée) : ${err.message}`);
     }
 
     logger.info("[autoFetchQualifying] Passage terminé.");
