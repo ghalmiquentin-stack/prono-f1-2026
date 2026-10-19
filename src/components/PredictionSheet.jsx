@@ -158,8 +158,7 @@ export default function PredictionSheet({
         addToast('Pronostic enregistré !', 'success')
       } else {
         // Modification — no cap: every save after the first just bumps the
-        // counter. Penalty (if any) stays informational/dynamic, driven by
-        // the league's own modificationPenalty rule.
+        // counter. Any penalty is decided and written server-side.
         // `_id` is a client-only artifact injected by useCollection/useDocument
         // ({ _id: d.id, ...d.data() }) — never a real Firestore field. Strip it
         // before spreading `existing`, otherwise it leaks into the write and
@@ -175,39 +174,11 @@ export default function PredictionSheet({
           modifiedAt: new Date(),
         })
 
-        // Best-effort penalty record — the prediction itself is already
-        // saved at this point, so a failure here (Firestore rules,
-        // transient error, etc.) must never block closing the sheet. It
-        // DOES change which toast is shown below, though: the message must
-        // reflect whether the penalty was actually recorded when one was
-        // expected (modPenaltyEnabled), rather than claiming it unconditionally
-        // before even attempting the write — that exact pattern previously
-        // let a penalty silently fail to write while the toast still said
-        // "appliquée" (TC-006).
-        let penaltyWriteFailed = false
-        try {
-          await upsertDoc('penalties', `pen_change_${currentPlayerId}_${race.id}_${Date.now()}`, {
-            playerId: currentPlayerId, raceId: race.id, type: 'change', leagueId: activeLeagueId,
-            amount: modPenaltyAmount, createdAt: new Date(),
-          })
-        } catch (penErr) {
-          console.error(penErr)
-          penaltyWriteFailed = true
-        }
-
-        if (modPenaltyEnabled && penaltyWriteFailed) {
-          addToast(
-            "Pronostic modifié, mais la pénalité n'a pas pu être enregistrée — signalez-le à l'admin de la ligue",
-            'error'
-          )
-        } else {
-          addToast(
-            modPenaltyEnabled
-              ? `Pronostic modifié — pénalité -${modPenaltyAmount} pts appliquée`
-              : 'Pronostic modifié',
-            'warning'
-          )
-        }
+        // Penalties are no longer written from the client: the server computes
+        // them from its own clock (cloud function, switch at the start of the
+        // Qualifying session). The client therefore claims nothing about a
+        // penalty here.
+        addToast('Pronostic modifié', 'warning')
       }
       handleClose()
     } catch (err) {

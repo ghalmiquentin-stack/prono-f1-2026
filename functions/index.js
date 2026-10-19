@@ -7,6 +7,7 @@ const { fetchRaceResult } = require("./lib/fetchRaceResult");
 const { fetchQualifying } = require("./lib/fetchQualifying");
 const { syncQualifyingStarts } = require("./lib/qualifyingStart");
 const { observePredictionWrite } = require("./lib/predictionShadow");
+const { applyPredictionWrite, runPenaltyCatchUp } = require("./lib/penaltyEngine");
 
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
@@ -243,4 +244,48 @@ exports.predictionShadowObserver = onDocumentWritten(
       toTimestamp: (date) => admin.firestore.Timestamp.fromDate(date),
       event,
     })
+);
+
+// LOT 2b — pénalités RÉELLES (horloge serveur). Même déclencheur que
+// l'observation ci-dessus (qui reste déployée et inchangée jusqu'au bilan),
+// mais écrit dans `penalties` (source: 'auto', id déterministe) et dans
+// `penaltyJournal`, en UN lot atomique : pénalité + entrée de journal.
+// Si l'entrée existe déjà (rejeu), rien n'est recréé, même si l'admin a
+// supprimé la pénalité. Voir lib/penaltyEngine.js.
+exports.predictionPenaltyApplier = onDocumentWritten(
+  {
+    document: "predictions/{predictionId}",
+    region: "europe-west9",
+    retry: true,
+    maxInstances: 3,
+  },
+  (event) =>
+    applyPredictionWrite({
+      event,
+      db,
+      FieldPath: admin.firestore.FieldPath,
+      serverTimestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+      toTimestamp: (date) => admin.firestore.Timestamp.fromDate(date),
+      logger,
+    })
+);
+
+// LOT 2b — rattrapage des événements manqués (le déclencheur Firestore a
+// perdu 1 événement sur 16 au lot 0). Toutes les 15 minutes : examine les
+// pronostics des courses 'upcoming' écrits il y a 10 min à 72 h, détecte une
+// dernière entrée de journal plus ancienne que updatedAt - 120 s, et décide
+// d'après le podium courant comparé à podiumAfter. Comparaison impossible =>
+// 'needs-review', jamais de pénalité devinée. Troisième tâche Cloud Scheduler
+// du projet (la dernière du niveau gratuit). Voir lib/penaltyEngine.js.
+exports.penaltyCatchUp = onSchedule(
+  { schedule: "every 15 minutes", region: "europe-west9", timeoutSeconds: 120, maxInstances: 1 },
+  async () => {
+    await runPenaltyCatchUp({
+      db,
+      FieldPath: admin.firestore.FieldPath,
+      serverTimestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+      toTimestamp: (date) => admin.firestore.Timestamp.fromDate(date),
+      logger,
+    });
+  }
 );
