@@ -1,10 +1,12 @@
 const { setGlobalOptions } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const { fetchRaceResult } = require("./lib/fetchRaceResult");
 const { fetchQualifying } = require("./lib/fetchQualifying");
 const { syncQualifyingStarts } = require("./lib/qualifyingStart");
+const { observePredictionWrite } = require("./lib/predictionShadow");
 
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
@@ -216,4 +218,29 @@ exports.autoFetchQualifying = onSchedule(
 
     logger.info("[autoFetchQualifying] Passage terminé.");
   }
+);
+
+// LOT 2 (mode observation) — journal de chaque écriture de pronostic
+// (predictionJournal) et pénalité "fantôme" (penaltyShadow), calculées avec
+// l'horloge serveur (event.time) et races.qualifyingStartAt. N'écrit JAMAIS
+// dans predictions, penalties ni races : aucun score n'est modifié, aucune
+// boucle de déclenchement possible. Voir lib/predictionShadow.js.
+// retry: true — une erreur TRANSITOIRE (Firestore) est relancée et
+// l'événement rejoué ; les écritures sont idempotentes (id déterministe +
+// create()). Une erreur PERMANENTE (événement ou pronostic inexploitable) est
+// journalisée par logger.error sans relance : un rejeu ne la réparerait pas.
+exports.predictionShadowObserver = onDocumentWritten(
+  {
+    document: "predictions/{predictionId}",
+    region: "europe-west9",
+    retry: true,
+    maxInstances: 3,
+  },
+  (event) =>
+    observePredictionWrite({
+      db,
+      logger,
+      toTimestamp: (date) => admin.firestore.Timestamp.fromDate(date),
+      event,
+    })
 );
