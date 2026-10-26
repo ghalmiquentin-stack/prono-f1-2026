@@ -16,27 +16,6 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/leagues/$(leagueId)).data.adminUids;
     }
 
-    // Same "own player doc" mechanism already used by the predictions rules
-    // (get the players/{playerId} doc and compare authUid), plus an extra
-    // check that the player's own leagueId actually matches the leagueId
-    // being written — predictions doesn't enforce this today, but we want
-    // it here since penalties self-service is a new, narrower capability.
-    function isOwnPlayerInLeague(playerId, leagueId) {
-      let player = get(/databases/$(database)/documents/players/$(playerId)).data;
-      return isSignedIn()
-        && player.authUid == request.auth.uid
-        && player.leagueId == leagueId;
-    }
-
-    // The league's modification-penalty rule must be enabled, and the
-    // amount on the incoming penalty must exactly match the currently
-    // configured amount — a player can never write an arbitrary amount.
-    function matchesModificationPenaltyRule(leagueId, amount) {
-      let rules = get(/databases/$(database)/documents/leagues/$(leagueId)).data.rules;
-      return rules.modificationPenalty.enabled == true
-        && rules.modificationPenalty.amount == amount;
-    }
-
     // Un pronostic est verrouillé si la course est annulée, ou si son heure
     // de départ (raceStartAt) est déjà passée selon l'horloge serveur.
     // raceId est stocké comme un nombre sur les documents predictions/races
@@ -46,6 +25,19 @@ service cloud.firestore {
       let race = get(/databases/$(database)/documents/races/$(string(raceId))).data;
       return race.status == 'cancelled'
         || (race.raceStartAt != null && request.time >= race.raceStartAt);
+    }
+
+    // Un joueur ne peut supprimer son propre pronostic que tant que la
+    // bascule n'est pas passée (request.time < races/{raceId}.qualifyingStartAt,
+    // début de la séance "Qualifying"). Sans cette limite, supprimer puis
+    // recréer un pronostic transformerait une modification (pénalisée) en
+    // simple création. Repli sur !raceIsLocked quand qualifyingStartAt est
+    // absent.
+    function playerMayDeleteOwnPrediction(raceId) {
+      let race = get(/databases/$(database)/documents/races/$(string(raceId))).data;
+      return race.get('qualifyingStartAt', null) != null
+        ? request.time < race.qualifyingStartAt
+        : !raceIsLocked(raceId);
     }
 
     // ── leagues ──────────────────────────────────────────────────────────
@@ -157,24 +149,21 @@ service cloud.firestore {
 
       allow delete: if isSuperAdmin()
         || isLeagueAdmin(resource.data.leagueId)
-        || get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.authUid == request.auth.uid;
+        || (
+          get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.authUid == request.auth.uid
+          && playerMayDeleteOwnPrediction(resource.data.raceId)
+        );
     }
 
     // ── penalties ────────────────────────────────────────────────────────
     match /penalties/{penId} {
       allow read: if isSignedIn();
 
-      // Admins can create any penalty. A player can only self-create their
-      // own automatic "change" (podium modification) penalty — never for
-      // another player, never another type, and never for an amount other
-      // than the league's currently configured modificationPenalty amount.
+      // Seuls les admins (de la ligue, ou super-admin) créent des pénalités
+      // à la main. Les pénalités automatiques sont écrites par les Cloud
+      // Functions (SDK admin, qui contourne les règles).
       allow create: if isSuperAdmin()
-        || isLeagueAdmin(request.resource.data.leagueId)
-        || (
-          request.resource.data.type == 'change'
-          && isOwnPlayerInLeague(request.resource.data.playerId, request.resource.data.leagueId)
-          && matchesModificationPenaltyRule(request.resource.data.leagueId, request.resource.data.amount)
-        );
+        || isLeagueAdmin(request.resource.data.leagueId);
 
       allow update, delete: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
     }
