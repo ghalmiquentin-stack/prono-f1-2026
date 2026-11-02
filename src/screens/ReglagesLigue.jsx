@@ -720,7 +720,7 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                                       auto
                                     </span>
                                   )}
-                                  {serverTimeLabel && ` · ${serverTimeLabel} (heure serveur)`}
+                                  {serverTimeLabel && ` · ${serverTimeLabel}`}
                                   {createdAtLabel && ` · ${createdAtLabel}`}
                                 </p>
                                 <span className={`text-xs font-bold px-2 py-1 rounded-full ${
