@@ -14,6 +14,8 @@ import Countdown from '../components/Countdown'
 import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
 import PlayerBadge from '../components/PlayerBadge'
 import PredictionSheet from '../components/PredictionSheet'
+import PredictionTimestamps, { formatPredTime } from '../components/PredictionTimestamps'
+import QualifyingPodium, { getQualifyingPodium } from '../components/QualifyingPodium'
 import Skeleton, { SkeletonCard } from '../components/Skeleton'
 
 const PLAYER_COLORS_FALLBACK = {
@@ -65,22 +67,6 @@ function getLocalTzAbbr(isoString) {
     timeZoneName: 'short',
   }).formatToParts(new Date(isoString))
   return parts.find(p => p.type === 'timeZoneName')?.value ?? ''
-}
-
-// No explicit timeZone on either part — resolves to the viewer's own browser
-// timezone rather than a fixed France/Dubai pair.
-function formatPredTime(ts) {
-  if (!ts) return null
-  const date = ts?.toDate?.() ?? new Date(ts)
-  const datePart = date.toLocaleDateString('fr-FR', {
-    weekday: 'short', day: 'numeric', month: 'short',
-  })
-  const parts = new Intl.DateTimeFormat('fr-FR', {
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  }).formatToParts(date)
-  const h = parts.find(p => p.type === 'hour')?.value ?? '00'
-  const m = parts.find(p => p.type === 'minute')?.value ?? '00'
-  return `${datePart} à ${h}h${m}`
 }
 
 export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId, addToast }) {
@@ -273,7 +259,17 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             )
           })}
         </div>
-        {pred.submittedAt && (
+        {raceStarted ? (
+          // Après le départ : horodatages visibles de tous (lignes serveur
+          // prioritaires s'il y a une pénalité automatique).
+          <PredictionTimestamps
+            prediction={pred}
+            penalties={penalties}
+            playerId={player.id}
+            raceId={nextRace.id}
+            className="mt-2"
+          />
+        ) : pred.submittedAt && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1 text-xs text-muted">
               <Clock size={12} />
@@ -376,16 +372,25 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             {/* Full countdown J / HH / MM / SEC */}
             <Countdown targetDate={raceStartMs} />
 
-            {/* Local start time — viewer's own timezone, same instant as the countdown */}
-            {localTime && (
-              <div className="flex justify-center mt-3 text-xs">
-                <span className="text-muted flex items-center gap-1.5">
-                  <Clock size={12} />
-                  <span className="text-white font-bold">{localTime.time}</span>
-                  <span className="text-[10px] text-muted">{localTime.tzAbbr}</span>
-                </span>
-              </div>
-            )}
+            {/* Podium des qualifications (races.qualifying) : quand il existe, sa
+                bande remplace la ligne « heure locale » en la reprenant dans son
+                en-tête ; sinon la ligne d'heure locale reste telle quelle. */}
+            {(() => {
+              const qualifyingPodium = getQualifyingPodium(nextRace.qualifying)
+              if (qualifyingPodium) {
+                return <QualifyingPodium podium={qualifyingPodium} drivers={drivers} localTime={localTime} />
+              }
+              return localTime && (
+                /* Local start time — viewer's own timezone, same instant as the countdown */
+                <div className="flex justify-center mt-3 text-xs">
+                  <span className="text-muted flex items-center gap-1.5">
+                    <Clock size={12} />
+                    <span className="text-white font-bold">{localTime.time}</span>
+                    <span className="text-[10px] text-muted">{localTime.tzAbbr}</span>
+                  </span>
+                </div>
+              )
+            })()}
 
             {/* Prediction status */}
             <div className="mt-4 pt-4 border-t border-border">

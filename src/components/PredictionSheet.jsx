@@ -9,6 +9,7 @@ import { formatRaceLocalTime, raceStartInstant } from '../utils/races'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
 import { getDriverPhoto } from '../utils/drivers'
 import BottomSheet from './BottomSheet'
+import PredictionTimestamps from './PredictionTimestamps'
 import Countdown from './Countdown'
 
 const POSITIONS = ['P1', 'P2', 'P3']
@@ -287,6 +288,13 @@ export default function PredictionSheet({
                           {penTotal > 0 && <span className="text-xs text-accent font-bold">-{penTotal} pén.</span>}
                           <span className="font-black text-base" style={{ color: pidColor }}>{net} pts</span>
                         </div>
+                        <PredictionTimestamps
+                          prediction={pred}
+                          penalties={penalties}
+                          playerId={pid}
+                          raceId={currentRace.id}
+                          className="mb-2"
+                        />
                         <div className="grid grid-cols-3 gap-2">
                           {POSITIONS.map(pos => {
                             const driverName = pred.prediction[pos]
@@ -310,15 +318,15 @@ export default function PredictionSheet({
                                   }
                                 </div>
                                 <div className="text-xs font-bold truncate">{driverName}</div>
-                                {isModified && (
-                                  <span className="inline-block text-[8px] font-bold px-1 py-0.5 rounded mt-0.5" style={{ color: '#E8002D', backgroundColor: '#E8002D22' }}>Modifié</span>
-                                )}
                                 <div className={`text-[9px] font-bold mt-1 ${
                                   detail === 'exact'  ? 'text-green-400'  :
                                   detail === 'podium' ? 'text-yellow-400' : 'text-muted'
                                 }`}>
                                   {detailPoints(detail) > 0 ? `+${detailPoints(detail)}` : '0'}
                                 </div>
+                                {isModified && (
+                                  <span className="inline-block text-[8px] font-bold px-1 py-0.5 rounded mt-0.5" style={{ color: '#E8002D', backgroundColor: '#E8002D22' }}>Modifié</span>
+                                )}
                               </div>
                             )
                           })}
