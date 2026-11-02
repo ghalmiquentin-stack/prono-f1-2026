@@ -83,13 +83,15 @@ function formatHourMinute(ms) {
 // the real session start), say so; 'actual' and 'manual' need no mention.
 export function buildQualifyingBannerText({ kind, amount }, race) {
   const startMs = getQualifyingStartMs(race)
-  const scheduled = race?.qualifyingStartSource === 'scheduled' && startMs != null
-    ? ` (d'après l'horaire prévu à ${formatHourMinute(startMs)}, il peut être ajusté)`
-    : ''
-  // The schedule note goes before the final full stop.
-  return kind === 'change'
-    ? `Les qualifications ont commencé. Modifier votre podium coûte -${amount} pts${scheduled}.`
-    : `Les qualifications ont commencé. Un premier pronostic maintenant coûte -${amount} pts (pénalité tardive)${scheduled}.`
+  const scheduledNote = race?.qualifyingStartSource === 'scheduled' && startMs != null
+    ? `d'après l'horaire prévu à ${formatHourMinute(startMs)}, il peut être ajusté`
+    : null
+  // The schedule note goes before the final full stop; for a late creation it
+  // joins the existing parenthesis instead of opening a second one.
+  if (kind === 'change') {
+    return `Les qualifications ont commencé. Modifier votre podium coûte -${amount} pts${scheduledNote ? ` (${scheduledNote})` : ''}.`
+  }
+  return `Les qualifications ont commencé. Un premier pronostic maintenant coûte -${amount} pts (pénalité tardive${scheduledNote ? `, ${scheduledNote}` : ''}).`
 }
 
 export function buildPenaltyConfirm(context) {
