@@ -347,14 +347,7 @@ export default function PredictionSheet({
                           <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                             <span className="text-sm">⚠️</span>
                             <p className="text-xs text-yellow-400 font-bold">
-                              {changeCount > 0 && lateCount > 0
-                                ? <>Déjà {changeCount} modification{changeCount > 1 ? 's' : ''} (-{changeTotal} pts) + pénalité tardive (-{lateTotal} pts) · -{penaltyTotal} pts au total.{' '}Une nouvelle modification ajoutera -{modPenaltyAmount} pts.</>
-                                : lateCount > 0
-                                ? <>Une pénalité tardive de -{penaltyTotal} pts a déjà été appliquée.{' '}Une nouvelle modification ajoutera -{modPenaltyAmount} pts.</>
-                                : changeCount > 0
-                                ? <>Déjà {changeCount} modification{changeCount > 1 ? 's' : ''} · -{penaltyTotal} pts.{' '}Une nouvelle modification ajoutera -{modPenaltyAmount} pts.</>
-                                : <>Chaque modification vous coûtera -{modPenaltyAmount} pts.</>
-                              }
+                              Les modifications sont gratuites jusqu'au début des qualifications.{' '}Ensuite, chaque modification coûte -{modPenaltyAmount} pts.
                             </p>
                           </div>
                         ) : (
