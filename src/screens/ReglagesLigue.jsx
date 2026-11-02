@@ -39,6 +39,21 @@ function formatPenaltyDate(ts) {
   return `${datePart}, ${h}h${m}`
 }
 
+// Heure serveur de l'événement pénalisé (pénalités automatiques, champ
+// eventTime), même format jour + heure à la minute que formatPenaltyDate.
+// Retourne null si le champ est absent ou illisible : l'appelant retombe alors
+// sur l'affichage habituel (createdAt) au lieu de faire planter l'écran.
+function formatServerEventTime(ts) {
+  if (!ts) return null
+  try {
+    const date = ts?.toDate?.() ?? new Date(ts)
+    if (Number.isNaN(date.getTime())) return null
+    return formatPenaltyDate(date)
+  } catch {
+    return null
+  }
+}
+
 export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague, onClearActiveLeague, setActiveTab, addToast }) {
   const { user } = useAuth()
   const { data: league, loading: leagueLoading } = useDocument(user ? 'leagues' : null, leagueId)
@@ -693,11 +708,19 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
                         <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border">
                           {playerPenalties.map(pen => {
                             const race = races.find(r => r.id === pen.raceId)
-                            const createdAtLabel = formatPenaltyDate(pen.createdAt)
+                            const isAuto = pen.source === 'auto'
+                            const serverTimeLabel = isAuto ? formatServerEventTime(pen.eventTime) : null
+                            const createdAtLabel = serverTimeLabel ? null : formatPenaltyDate(pen.createdAt)
                             return (
                               <div key={pen._id} className="flex items-center gap-3 pt-2">
                                 <p className="text-xs text-muted flex-1">
                                   GP {race?.name ?? pen.raceId} · {pen.type === 'late' ? 'Tardif' : 'Modification'}
+                                  {isAuto && (
+                                    <span className="ml-1.5 text-[9px] font-bold tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full">
+                                      auto
+                                    </span>
+                                  )}
+                                  {serverTimeLabel && ` · ${serverTimeLabel} (heure serveur)`}
                                   {createdAtLabel && ` · ${createdAtLabel}`}
                                 </p>
                                 <span className={`text-xs font-bold px-2 py-1 rounded-full ${
