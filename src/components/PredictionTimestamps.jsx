@@ -45,26 +45,41 @@ export function formatPredTime(ts) {
   }
 }
 
-const eventMs = (pen) => {
-  const d = toValidDate(pen?.eventTime) ?? toValidDate(pen?.createdAt)
-  return d ? d.getTime() : 0
+// Ligne « modification » (N = modificationCount, P = pénalités automatiques de
+// modification, H = heure déjà formatée). Retourne null sans heure valide.
+//   N=1,P=0 : « Modifié à 23h13 »            N=1,P>=1 : « Modifié à 23h13 (pénalisée) »
+//   N>1,P=0 : « Modifié 3 fois · dernière à 23h31 »
+//   N>1,0<P<N : « Modifié 3 fois (1 pénalisée) · dernière à 23h31 » / « (2 pénalisées) »
+//   N>1,P>=N : « Modifié 3 fois (toutes pénalisées) · dernière à 23h31 »
+export function formatModifiedLine(count, penalizedCount, hourMinute) {
+  if (!(count > 0) || !hourMinute) return null
+  if (count === 1) {
+    return penalizedCount >= 1 ? `Modifié à ${hourMinute} (pénalisée)` : `Modifié à ${hourMinute}`
+  }
+  let penalized = ''
+  if (penalizedCount >= count) penalized = ' (toutes pénalisées)'
+  else if (penalizedCount === 1) penalized = ' (1 pénalisée)'
+  else if (penalizedCount > 1) penalized = ` (${penalizedCount} pénalisées)`
+  return `Modifié ${count} fois${penalized} · dernière à ${hourMinute}`
 }
 
 /**
  * Horodatages d'un pronostic, visibles de tous les joueurs de la ligue après le
- * départ de la course. Trois familles de lignes, toutes à la minute :
- *   1. « Soumis le sam. 31 oct. à 22h24 »            (submittedAt, horloge de l'appareil)
- *   2. « Dernière modification à 23h13 (N fois) »    (modifiedAt, horloge de l'appareil)
- *   3. « Pénalité tardive à 22h24 » / « Pénalité de modification à 23h13 »
- *      (pénalités du joueur sur cette course, sans montant : il est déjà
- *      affiché à côté des points ; l'heure — celle du serveur — n'apparaît
- *      que pour source === 'auto' avec un eventTime valide, sinon le type seul)
+ * départ de la course. Deux lignes, toutes à la minute :
+ *   1. « Soumis le sam. 31 oct. à 22h24 »   (toujours ; « (tardif) » si une
+ *      pénalité automatique 'late' existe pour ce joueur et cette course)
+ *   2. « Modifié à 23h13 (pénalisée) » etc.  (si le pronostic a été modifié ;
+ *      voir formatModifiedLine pour les formats exacts)
+ * Les pénalités elles-mêmes n'ont plus de ligne : leur montant est déjà affiché
+ * en haut à droite de la carte du joueur.
  *
- * Cohérence : s'il existe une pénalité automatique 'late' (resp. 'change'), les
- * lignes 1 (resp. 2) sont masquées — l'heure serveur fait foi, pas celle de
- * l'appareil. updatedAt n'est jamais affiché (il change à chaque écriture,
- * déverrouillage admin compris). Le montant affiché est celui du document de
- * pénalité. Tout champ absent ou invalide donne simplement « rien » : le
+ * Les heures viennent de l'appareil du joueur (submittedAt, modifiedAt), sauf
+ * s'il existe une pénalité automatique (source === 'auto') 'late' (ligne 1) ou
+ * 'change' (ligne 2) avec un eventTime valide : l'heure enregistrée par le
+ * serveur, bien plus fiable, la remplace alors (la plus récente s'il y en a
+ * plusieurs). Les pénalités sans source (anciennes ou manuelles) sont ignorées.
+ * updatedAt n'est jamais affiché (il change à chaque écriture, déverrouillage
+ * admin compris). Tout champ absent ou invalide donne simplement « rien » : le
  * composant ne lève jamais.
  *
  * `penalties` = pénalités de la ligue (déjà filtrées par ligue par la requête) ;
@@ -72,31 +87,29 @@ const eventMs = (pen) => {
  */
 export default function PredictionTimestamps({ prediction, penalties, playerId, raceId, className = '' }) {
   try {
-    const pens = (Array.isArray(penalties) ? penalties : [])
-      .filter(p => p && p.playerId === playerId && p.raceId === raceId)
-      .sort((a, b) => eventMs(a) - eventMs(b))
+    const autoPens = (Array.isArray(penalties) ? penalties : [])
+      .filter(p => p && p.source === 'auto' && p.playerId === playerId && p.raceId === raceId)
 
-    const hasAutoLate = pens.some(p => p.source === 'auto' && p.type === 'late')
-    const hasAutoChange = pens.some(p => p.source === 'auto' && p.type === 'change')
+    // Latest valid server event time among automatic penalties of this type.
+    const serverDateOf = (list) => list
+      .map(p => toValidDate(p.eventTime))
+      .filter(Boolean)
+      .sort((a, b) => b.getTime() - a.getTime())[0] ?? null
 
-    const submitted = hasAutoLate ? null : formatPredTime(prediction?.submittedAt)
+    const latePens = autoPens.filter(p => p.type === 'late')
+    const changePens = autoPens.filter(p => p.type === 'change')
 
-    const modCount = getModificationCount(prediction)
-    const modifiedDate = toValidDate(prediction?.modifiedAt)
-    const modified = !hasAutoChange && modCount > 0 && modifiedDate
-      ? `Dernière modification à ${formatHourMinute(modifiedDate)} (${modCount} fois)`
-      : null
+    const submittedTime = formatPredTime(serverDateOf(latePens) ?? prediction?.submittedAt)
+    const submitted = submittedTime && (latePens.length > 0 ? `${submittedTime} (tardif)` : submittedTime)
 
-    const penaltyLines = pens.map(pen => {
-      const label = pen.type === 'late' ? 'Pénalité tardive'
-        : pen.type === 'change' ? 'Pénalité de modification'
-        : 'Pénalité'
-      const serverDate = pen.source === 'auto' ? toValidDate(pen.eventTime) : null
-      const suffix = serverDate ? ` à ${formatHourMinute(serverDate)}` : ''
-      return { id: pen._id ?? pen.id ?? `${pen.type}-${eventMs(pen)}`, text: `${label}${suffix}` }
-    })
+    const modifiedDate = serverDateOf(changePens) ?? toValidDate(prediction?.modifiedAt)
+    const modified = formatModifiedLine(
+      getModificationCount(prediction),
+      changePens.length,
+      modifiedDate ? formatHourMinute(modifiedDate) : null,
+    )
 
-    if (!submitted && !modified && penaltyLines.length === 0) return null
+    if (!submitted && !modified) return null
 
     return (
       <div className={`space-y-0.5 ${className}`}>
@@ -109,9 +122,6 @@ export default function PredictionTimestamps({ prediction, penalties, playerId, 
         {modified && (
           <p className="text-xs text-muted pl-[16px]">{modified}</p>
         )}
-        {penaltyLines.map(line => (
-          <p key={line.id} className="text-xs text-muted pl-[16px]">{line.text}</p>
-        ))}
       </div>
     )
   } catch {
