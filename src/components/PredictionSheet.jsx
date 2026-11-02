@@ -4,11 +4,17 @@ import { calculateRaceScore, detailPoints } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
 import { getModificationCount } from '../utils/predictions'
 import { useRaceTiming } from '../hooks/useRaceTiming'
-import { summarizePenalties, getPenaltyAmount } from '../utils/penalties'
+import { useQualifyingSwitch } from '../hooks/useQualifyingSwitch'
+import { usePenaltyConfirm } from '../hooks/usePenaltyConfirm'
+import { getPenaltyAmount } from '../utils/penalties'
+import {
+  getPenaltyRule, getPenaltyContext, buildQualifyingBannerText, buildPenaltyConfirm,
+} from '../utils/qualifyingPenalty'
 import { formatRaceLocalTime, raceStartInstant } from '../utils/races'
 import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
 import { getDriverPhoto } from '../utils/drivers'
 import BottomSheet from './BottomSheet'
+import ConfirmModal from './ConfirmModal'
 import PredictionTimestamps from './PredictionTimestamps'
 import Countdown from './Countdown'
 
@@ -48,7 +54,9 @@ export default function PredictionSheet({
   // regardless of which screen opens it.
   const { data: league } = useDocument(activeLeagueId ? 'leagues' : null, activeLeagueId)
   const modPenaltyEnabled = !!league?.rules?.modificationPenalty?.enabled
-  const modPenaltyAmount = league?.rules?.modificationPenalty?.amount ?? 0
+  // Active modification penalty with a strictly positive numeric amount (null
+  // otherwise): the pre-qualifying banner below never shows "-0 pts".
+  const modPenaltyRule = getPenaltyRule(league, true)
 
   // Reactive view of the selected race (stays fresh after Firebase writes)
   const currentRace = useMemo(
@@ -82,6 +90,10 @@ export default function PredictionSheet({
   useEffect(() => {
     if (locked) { setDriverPickerOpen(false); setActivePosition(null) }
   }, [locked])
+
+  // True from 30 s before races/{id}.qualifyingStartAt; flips by itself (hook
+  // timer) so the penalty banner can appear while the sheet is already open.
+  const { switched: qualifyingSwitched } = useQualifyingSwitch(currentRace)
 
   // Re-initialize the draft/tab every time the sheet transitions to open —
   // mirrors the previous openRaceSheet() click handler, which always ran
@@ -189,6 +201,26 @@ export default function PredictionSheet({
       setSaving(false)
     }
   }
+
+  // "Valider" goes through here: the penalty context is recomputed at click
+  // time (Date.now(), never frozen when the sheet opens). No penalty -> save
+  // exactly as before; otherwise a confirmation first. Cancelling writes
+  // nothing and keeps the sheet and the draft as they are.
+  const penaltyConfirm = usePenaltyConfirm({
+    getContext: () => getPenaltyContext({
+      race: currentRace,
+      league,
+      existingPrediction: race ? getMyPrediction(race.id) : null,
+      draft: draftPrediction,
+      nowMs: Date.now(),
+    }),
+    save: savePrediction,
+  })
+
+  // A pending confirmation must not outlive the sheet or the lock.
+  useEffect(() => {
+    if (locked || !isOpen) penaltyConfirm.reset()
+  }, [locked, isOpen])
 
   return (
     <>
@@ -339,33 +371,38 @@ export default function PredictionSheet({
 
               {activeTab === 'pronostics' && currentRace.status !== 'completed' && (() => {
                 const existingPred = getMyPrediction(currentRace.id)
-                // Real, current penalties for this prediction (modifications +
-                // late submission) — not modificationCount or a theoretical
-                // count × amount, so an admin deletion is reflected
-                // immediately and stays consistent between the count and
-                // the points shown.
-                const { changeCount, lateCount, changeTotal, lateTotal, total: penaltyTotal } =
-                  summarizePenalties(penalties, currentPlayerId, currentRace.id)
+                // From 30 s before qualifyingStartAt, when the matching league
+                // rule is active, this banner replaces the pre-qualifying one
+                // below (which stays untouched before the switch).
+                const switchRule = !locked && qualifyingSwitched ? getPenaltyRule(league, !!existingPred) : null
                 return (
                   <div className="space-y-5">
                     <div>
                       <p className="section-title">Votre pronostic podium</p>
-                      {existingPred && !locked && (
-                        modPenaltyEnabled ? (
+                      {switchRule && (
+                        <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                          <span className="text-sm">⚠️</span>
+                          <p className="text-xs text-yellow-400 font-bold">
+                            {buildQualifyingBannerText(switchRule, currentRace)}
+                          </p>
+                        </div>
+                      )}
+                      {!switchRule && existingPred && !locked && (
+                        modPenaltyRule ? (
                           <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                             <span className="text-sm">⚠️</span>
                             <p className="text-xs text-yellow-400 font-bold">
-                              Les modifications sont gratuites jusqu'au début des qualifications.{' '}Ensuite, chaque modification coûte -{modPenaltyAmount} pts.
+                              Les modifications sont gratuites jusqu'au début des qualifications.{' '}Ensuite, chaque modification coûte -{modPenaltyRule.amount} pts.
                             </p>
                           </div>
-                        ) : (
+                        ) : !modPenaltyEnabled ? (
                           <div className="mb-3 flex items-center gap-2 p-2.5 bg-surfaceHigh/50 border border-border rounded-lg">
                             <span className="text-sm">ℹ️</span>
                             <p className="text-xs text-muted font-bold">
                               Vous pouvez modifier votre podium autant de fois que vous le souhaitez avant le départ de la course.
                             </p>
                           </div>
-                        )
+                        ) : null
                       )}
                       <div className="space-y-3">
                         {POSITIONS.map((pos, i) => {
@@ -419,7 +456,7 @@ export default function PredictionSheet({
                       </p>
                     ) : (
                       <button
-                        onClick={savePrediction}
+                        onClick={penaltyConfirm.request}
                         disabled={!canSave || saving}
                         className={`w-full py-4 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
                           canSave && !saving ? 'bg-accent text-white shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
@@ -693,6 +730,15 @@ export default function PredictionSheet({
           )}
         </div>
       </BottomSheet>
+
+      {/* Penalty confirmation — fixed z-50, above the BottomSheets (z-40) */}
+      <ConfirmModal
+        isOpen={!!penaltyConfirm.pending}
+        danger
+        {...buildPenaltyConfirm(penaltyConfirm.pending)}
+        onConfirm={penaltyConfirm.confirm}
+        onCancel={penaltyConfirm.cancel}
+      />
     </>
   )
 }
