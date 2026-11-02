@@ -8,6 +8,7 @@ const { fetchQualifying } = require("./lib/fetchQualifying");
 const { syncQualifyingStarts } = require("./lib/qualifyingStart");
 const { observePredictionWrite } = require("./lib/predictionShadow");
 const { applyPredictionWrite, runPenaltyCatchUp } = require("./lib/penaltyEngine");
+const { runPenaltyRetractionPass } = require("./lib/penaltyRetraction");
 
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
@@ -280,12 +281,37 @@ exports.predictionPenaltyApplier = onDocumentWritten(
 exports.penaltyCatchUp = onSchedule(
   { schedule: "every 15 minutes", region: "europe-west9", timeoutSeconds: 120, maxInstances: 1 },
   async () => {
-    await runPenaltyCatchUp({
-      db,
-      FieldPath: admin.firestore.FieldPath,
-      serverTimestamp: () => admin.firestore.FieldValue.serverTimestamp(),
-      toTimestamp: (date) => admin.firestore.Timestamp.fromDate(date),
-      logger,
-    });
+    // Le rattrapage s'exécute d'abord, exactement comme avant. Son éventuelle
+    // erreur (transitoire) est relancée À LA FIN, pour rester visible dans la
+    // supervision, mais n'empêche pas le bloc de retrait ci-dessous.
+    let catchUpError = null;
+    try {
+      await runPenaltyCatchUp({
+        db,
+        FieldPath: admin.firestore.FieldPath,
+        serverTimestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+        toTimestamp: (date) => admin.firestore.Timestamp.fromDate(date),
+        logger,
+      });
+    } catch (err) {
+      catchUpError = err;
+    }
+
+    // LOT 4 — retrait des pénalités injectées par un horaire provisoire
+    // (qualifyingStartSource 'scheduled') lorsque la séance a en réalité démarré
+    // plus tard (source 'actual'). Bloc isolé : toute erreur est journalisée
+    // (error) et ne peut ni interrompre ni faire échouer ce passage. Voir
+    // lib/penaltyRetraction.js.
+    try {
+      await runPenaltyRetractionPass({
+        db,
+        serverTimestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+        logger,
+      });
+    } catch (err) {
+      logger.error(`[penaltyRetraction] Erreur inattendue (le reste du passage n'est pas affecté) : ${err.message}`, { stack: err.stack });
+    }
+
+    if (catchUpError) throw catchUpError;
   }
 );
