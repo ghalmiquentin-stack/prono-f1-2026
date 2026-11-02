@@ -68,30 +68,14 @@ export function getPenaltyContext({ race, league, existingPrediction, draft, now
   return getPenaltyRule(league, !!existingPrediction) ?? NO_PENALTY
 }
 
-// "22h24" in the viewer's own timezone, to the minute.
-function formatHourMinute(ms) {
-  const parts = new Intl.DateTimeFormat('fr-FR', {
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date(ms))
-  const h = parts.find(p => p.type === 'hour')?.value ?? '00'
-  const m = parts.find(p => p.type === 'minute')?.value ?? '00'
-  return `${h}h${m}`
-}
-
-// Banner text once the switch is crossed. When the switch instant is only the
-// scheduled timetable (qualifyingStartSource 'scheduled', not yet confirmed by
-// the real session start), say so; 'actual' and 'manual' need no mention.
-export function buildQualifyingBannerText({ kind, amount }, race) {
-  const startMs = getQualifyingStartMs(race)
-  const scheduledNote = race?.qualifyingStartSource === 'scheduled' && startMs != null
-    ? `d'après l'horaire prévu à ${formatHourMinute(startMs)}, il peut être ajusté`
-    : null
-  // The schedule note goes before the final full stop; for a late creation it
-  // joins the existing parenthesis instead of opening a second one.
-  if (kind === 'change') {
-    return `Les qualifications ont commencé. Modifier votre podium coûte -${amount} pts${scheduledNote ? ` (${scheduledNote})` : ''}.`
-  }
-  return `Les qualifications ont commencé. Un premier pronostic maintenant coûte -${amount} pts (pénalité tardive${scheduledNote ? `, ${scheduledNote}` : ''}).`
+// Banner text once the switch is crossed. The text is the same whether the
+// switch instant is the scheduled timetable or the real session start: since
+// the server retracts penalties injected by a provisional timetable (LOT 4),
+// the banner no longer has to mention it.
+export function buildQualifyingBannerText({ kind, amount }) {
+  return kind === 'change'
+    ? `Départ des qualifications passé : modifier votre podium coûte -${amount} pts.`
+    : `Départ des qualifications passé : un premier pronostic coûte -${amount} pts (pénalité tardive).`
 }
 
 export function buildPenaltyConfirm(context) {
@@ -101,8 +85,8 @@ export function buildPenaltyConfirm(context) {
   return {
     title: 'Confirmer la pénalité ?',
     message: kind === 'change'
-      ? `Vous modifiez votre podium après le début des qualifications : pénalité de -${amount} pts. Seul l'admin de la ligue peut l'annuler.`
-      : `Vous pronostiquez après le début des qualifications : pénalité tardive de -${amount} pts. Seul l'admin de la ligue peut l'annuler.`,
+      ? `Vous modifiez votre podium après le départ des qualifications : pénalité de -${amount} pts. L'admin de la ligue peut l'annuler.`
+      : `Vous pronostiquez après le départ des qualifications : pénalité tardive de -${amount} pts. L'admin de la ligue peut l'annuler.`,
     confirmLabel: `Confirmer (-${amount} pts)`,
   }
 }

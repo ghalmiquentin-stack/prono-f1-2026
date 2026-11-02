@@ -383,7 +383,7 @@ export default function PredictionSheet({
                         <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                           <span className="text-sm">⚠️</span>
                           <p className="text-xs text-yellow-400 font-bold">
-                            {buildQualifyingBannerText(switchRule, currentRace)}
+                            {buildQualifyingBannerText(switchRule)}
                           </p>
                         </div>
                       )}
