@@ -372,24 +372,22 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             {/* Full countdown J / HH / MM / SEC */}
             <Countdown targetDate={raceStartMs} />
 
-            {/* Podium des qualifications (races.qualifying) : quand il existe, sa
-                bande remplace la ligne « heure locale » en la reprenant dans son
-                en-tête ; sinon la ligne d'heure locale reste telle quelle. */}
+            {/* Local start time — viewer's own timezone, same instant as the countdown */}
+            {localTime && (
+              <div className="flex justify-center mt-3 text-xs">
+                <span className="text-muted flex items-center gap-1.5">
+                  <Clock size={12} />
+                  <span className="text-white font-bold">{localTime.time}</span>
+                  <span className="text-[10px] text-muted">{localTime.tzAbbr}</span>
+                </span>
+              </div>
+            )}
+
+            {/* Podium des qualifications (races.qualifying) : bande affichée sous
+                l'heure locale seulement si P1, P2 et P3 sont tous connus. */}
             {(() => {
               const qualifyingPodium = getQualifyingPodium(nextRace.qualifying)
-              if (qualifyingPodium) {
-                return <QualifyingPodium podium={qualifyingPodium} drivers={drivers} localTime={localTime} />
-              }
-              return localTime && (
-                /* Local start time — viewer's own timezone, same instant as the countdown */
-                <div className="flex justify-center mt-3 text-xs">
-                  <span className="text-muted flex items-center gap-1.5">
-                    <Clock size={12} />
-                    <span className="text-white font-bold">{localTime.time}</span>
-                    <span className="text-[10px] text-muted">{localTime.tzAbbr}</span>
-                  </span>
-                </div>
-              )
+              return qualifyingPodium && <QualifyingPodium podium={qualifyingPodium} drivers={drivers} />
             })()}
 
             {/* Prediction status */}
