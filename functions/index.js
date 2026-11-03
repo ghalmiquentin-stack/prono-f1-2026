@@ -9,6 +9,7 @@ const { syncQualifyingStarts } = require("./lib/qualifyingStart");
 const { observePredictionWrite } = require("./lib/predictionShadow");
 const { applyPredictionWrite, runPenaltyCatchUp } = require("./lib/penaltyEngine");
 const { runPenaltyRetractionPass } = require("./lib/penaltyRetraction");
+const { classifyOpenF1Error, isGridNotPublished, isRealtimeLimited, OPENF1_401_TEXT } = require("./lib/openf1Errors");
 
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
@@ -87,7 +88,14 @@ exports.autoFetchRaceResults = onSchedule(
       try {
         result = await fetchRaceResult(db, race);
       } catch (err) {
-        logger.error(`[autoFetchRaceResults] Erreur OpenF1 pour ${race.name} (id=${race.id}) : ${err.message}`);
+        // Niveau et texte seulement (flux inchangé : on retente au prochain
+        // passage) : un 401 d'OpenF1 pendant une séance live est attendu.
+        const info = classifyOpenF1Error(err);
+        if (isRealtimeLimited(info)) {
+          logger.warn(`[autoFetchRaceResults] ${race.name} (id=${race.id}) : ${OPENF1_401_TEXT} sur ${info.call}, nouvel essai au prochain passage.`);
+        } else {
+          logger.error(`[autoFetchRaceResults] Erreur OpenF1 pour ${race.name} (id=${race.id}) : ${err.message}`);
+        }
         continue;
       }
 
@@ -174,7 +182,17 @@ exports.autoFetchQualifying = onSchedule(
       try {
         qualifying = await fetchQualifying(db, race);
       } catch (err) {
-        logger.error(`[autoFetchQualifying] Erreur OpenF1 pour ${race.name} (id=${race.id}) : ${err.message}`);
+        // Niveau et texte seulement (flux inchangé : on retente au prochain
+        // passage) : la grille pas encore publiée (404) et le 401 d'OpenF1
+        // pendant une séance live sont attendus, pas des erreurs.
+        const info = classifyOpenF1Error(err);
+        if (isGridNotPublished(info)) {
+          logger.info(`[autoFetchQualifying] ${race.name} (id=${race.id}) : grille pas encore publiée par OpenF1 (404), nouvel essai au prochain passage.`);
+        } else if (isRealtimeLimited(info)) {
+          logger.warn(`[autoFetchQualifying] ${race.name} (id=${race.id}) : ${OPENF1_401_TEXT} sur ${info.call}, nouvel essai au prochain passage.`);
+        } else {
+          logger.error(`[autoFetchQualifying] Erreur OpenF1 pour ${race.name} (id=${race.id}) : ${err.message}`);
+        }
         continue;
       }
 

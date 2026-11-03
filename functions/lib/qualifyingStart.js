@@ -34,6 +34,8 @@ const { resolveMeetingKey: defaultResolveMeetingKey } = require('./fetchRaceResu
  * fichier se testent sans réseau ni base (voir le script de test du lot).
  */
 
+const { classifyOpenF1Error, isRealtimeLimited, OPENF1_401_TEXT } = require('./openf1Errors')
+
 const OPENF1_BASE = 'https://api.openf1.org/v1'
 
 // Courses candidates : départ dans <= 7 jours, ou déjà passé depuis moins de
@@ -255,7 +257,8 @@ async function processRace(ctx, { ref, data: initialData }) {
     // OpenF1 répond 404 quand un filtre ne trouve rien : équivalent à 0 session.
     const sessions = res.ok ? res.data : (res.status === 404 ? [] : null)
     if (sessions === null) {
-      log.warn(`[qualifyingStart] ${label} : sessions HTTP ${res.status}, aucune écriture (nouvel essai au passage suivant).`)
+      if (res.status === 401) log.warn(`[qualifyingStart] ${label} : ${OPENF1_401_TEXT} sur sessions, nouvel essai au prochain passage.`)
+      else log.warn(`[qualifyingStart] ${label} : sessions HTTP ${res.status}, aucune écriture (nouvel essai au passage suivant).`)
       return writes
     }
     const decision = decideStepA(sessions)
@@ -276,6 +279,7 @@ async function processRace(ctx, { ref, data: initialData }) {
       { qualifyingStartAt: ts, qualifyingScheduledStartAt: ts, qualifyingStartSource: 'scheduled' },
       `étape A : horaire programmé ${decision.startDate.toISOString()}`
     )
+    if (!ctx.dryRun) log.info(`[qualifyingStart] course id=${initialData.id} : qualifyingStartAt écrit (scheduled, ${decision.startDate.toISOString()})`)
     sessionKey = decision.sessionKey
   }
 
@@ -301,7 +305,8 @@ async function processRace(ctx, { ref, data: initialData }) {
       const sres = await fetchJson(`${OPENF1_BASE}/sessions?meeting_key=${meetingKey}&session_name=Qualifying`)
       const sessions = sres.ok ? sres.data : (sres.status === 404 ? [] : null)
       if (sessions === null) {
-        log.warn(`[qualifyingStart] ${label} : sessions HTTP ${sres.status} (étape B), nouvel essai au passage suivant.`)
+        if (sres.status === 401) log.warn(`[qualifyingStart] ${label} : ${OPENF1_401_TEXT} sur sessions (étape B), nouvel essai au prochain passage.`)
+        else log.warn(`[qualifyingStart] ${label} : sessions HTTP ${sres.status} (étape B), nouvel essai au passage suivant.`)
         return writes
       }
       const d = decideStepA(sessions)
@@ -344,6 +349,10 @@ async function processRace(ctx, { ref, data: initialData }) {
     // L'horaire programmé d'origine doit survivre : on ne le (re)pose que s'il manquait.
     if (fresh.qualifyingScheduledStartAt == null) fields.qualifyingScheduledStartAt = fresh.qualifyingStartAt
     await apply(fields, `étape B : heure réelle ${decision.startDate.toISOString()}`)
+    if (!ctx.dryRun) {
+      const gapSec = Math.round((decision.startDate.getTime() - scheduledMs) / 1000)
+      log.info(`[qualifyingStart] course id=${initialData.id} : qualifyingStartAt écrit (actual, ${decision.startDate.toISOString()}, écart ${gapSec >= 0 ? '+' : ''}${gapSec} s avec le programmé)`)
+    }
   }
 
   return writes
@@ -385,7 +394,12 @@ async function syncQualifyingStarts({
     try {
       allWrites.push(...(await processRace(ctx, candidate)))
     } catch (err) {
-      logger.warn(`[qualifyingStart] Erreur pour ${candidate.data.name} (id=${candidate.data.id}) : ${err.message}`)
+      const info = classifyOpenF1Error(err)
+      if (isRealtimeLimited(info)) {
+        logger.warn(`[qualifyingStart] ${candidate.data.name} (id=${candidate.data.id}) : ${OPENF1_401_TEXT} sur ${info.call}, nouvel essai au prochain passage.`)
+      } else {
+        logger.warn(`[qualifyingStart] Erreur pour ${candidate.data.name} (id=${candidate.data.id}) : ${err.message}`)
+      }
     }
   }
   return allWrites
