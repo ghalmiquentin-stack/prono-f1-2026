@@ -644,7 +644,7 @@ export default function PredictionSheet({
 
           {drivers.length > 0 ? (
             /* ── Compact list from Firebase ── */
-            groupDriversByTeam(drivers).map(team => (
+            groupDriversByTeam(drivers.filter(d => d.active !== false)).map(team => (
               <div key={team.name} className="mb-4">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: team.colour }} />
