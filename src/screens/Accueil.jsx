@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Pencil, Clock } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useRaceTiming } from '../hooks/useRaceTiming'
+import { useQualifyingPhase } from '../hooks/useQualifyingPhase'
 import { useCollection, useDocument, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getTeamColor } from '../data/drivers'
@@ -69,6 +70,13 @@ function getLocalTzAbbr(isoString) {
   return parts.find(p => p.type === 'timeZoneName')?.value ?? ''
 }
 
+// "dim. 18:00 CET" — weekday, hour and timezone all in the viewer's own
+// timezone, so the day can differ from the circuit's for far-away viewers.
+function formatSessionWhen(ms) {
+  const day = new Date(ms).toLocaleDateString('fr-FR', { weekday: 'short' })
+  return `${day} ${formatLocalTime(ms)} ${getLocalTzAbbr(ms)}`.trim()
+}
+
 export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId, addToast }) {
   const { user } = useAuth()
   const [predictionSheetOpen, setPredictionSheetOpen] = useState(false)
@@ -113,6 +121,10 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
 
   // Flips by itself when the GP start is crossed (no reload needed).
   const { started: raceStarted } = useRaceTiming(nextRace)
+
+  // Qualifying phase of the next GP (announced / before / live / none), flips
+  // by itself at each threshold. Display only: reads races.qualifyingStartAt.
+  const { phase: rawQualifyingPhase, qualifyingMs } = useQualifyingPhase(nextRace)
 
   const completedRaces = useMemo(() =>
     sortedRaces.filter(r => r.status === 'completed'),
@@ -166,13 +178,19 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
   // Race start instant (raceTimeUTC from data, 12:00 UTC fallback — see utils/races)
   const raceStartMs = nextRace ? raceStartInstant(nextRace).getTime() : null
 
-  const localTime = useMemo(() => {
-    if (raceStartMs == null) return null
-    return {
-      time: formatLocalTime(raceStartMs),
-      tzAbbr: getLocalTzAbbr(raceStartMs),
-    }
-  }, [raceStartMs])
+  // Titles of the two countdowns, in the viewer's own timezone.
+  const raceTitle = useMemo(
+    () => (raceStartMs == null ? null : { name: 'Course', when: formatSessionWhen(raceStartMs) }),
+    [raceStartMs]
+  )
+  const qualifyingTitle = useMemo(
+    () => (qualifyingMs == null ? null : { name: 'Qualifications', when: formatSessionWhen(qualifyingMs) }),
+    [qualifyingMs]
+  )
+
+  // Once the podium is known, it replaces every qualifying countdown/banner.
+  const qualifyingPodium = nextRace ? getQualifyingPodium(nextRace.qualifying) : null
+  const qualifyingPhase = qualifyingPodium ? 'none' : rawQualifyingPhase
 
   // "Hide predictions before race" league rule — lifts automatically once
   // the GP has actually started, same trigger as the countdown/auto-lock.
@@ -373,26 +391,35 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
               </div>
             </div>
 
-            {/* Full countdown J / HH / MM / SEC */}
-            <Countdown targetDate={raceStartMs} />
-
-            {/* Local start time — viewer's own timezone, same instant as the countdown */}
-            {localTime && (
-              <div className="flex justify-center mt-3 text-xs">
-                <span className="text-muted flex items-center gap-1.5">
-                  <Clock size={12} />
-                  <span className="text-white font-bold">{localTime.time}</span>
-                  <span className="text-[10px] text-muted">{localTime.tzAbbr}</span>
-                </span>
+            {/* Qualifications : horaire pas encore connu (course à plus de ~7 jours),
+                compteur avant la séance, ou séance en cours sans podium. */}
+            {qualifyingPhase === 'announced' && (
+              <div className="rounded-lg border border-border px-3 py-2.5 mb-4 text-center text-xs font-semibold text-muted">
+                Horaire des qualifs bientôt disponible
+              </div>
+            )}
+            {qualifyingPhase === 'before' && (
+              <div className="mb-4">
+                <Countdown targetDate={qualifyingMs} title={qualifyingTitle} endText={null} />
+              </div>
+            )}
+            {qualifyingPhase === 'live' && (
+              <div className="rounded-lg border border-accent/60 px-3 py-2.5 mb-4 text-center text-xs font-bold text-white">
+                <span className="inline-block w-[7px] h-[7px] rounded-full bg-accent mr-1.5 align-middle" aria-hidden="true" />
+                Qualifications en cours
               </div>
             )}
 
+            {/* Full countdown J / HH / MM / SEC, titre = jour et heure locaux */}
+            <Countdown targetDate={raceStartMs} title={raceTitle} />
+
             {/* Podium des qualifications (races.qualifying) : bande affichée sous
-                l'heure locale seulement si P1, P2 et P3 sont tous connus. */}
-            {(() => {
-              const qualifyingPodium = getQualifyingPodium(nextRace.qualifying)
-              return qualifyingPodium && <QualifyingPodium podium={qualifyingPodium} drivers={drivers} />
-            })()}
+                le compteur de la course seulement si P1, P2 et P3 sont tous connus. */}
+            {qualifyingPodium && (
+              <div className="mt-4 pt-0.5 border-t border-border">
+                <QualifyingPodium podium={qualifyingPodium} drivers={drivers} />
+              </div>
+            )}
 
             {/* Prediction status */}
             <div className="mt-4 pt-4 border-t border-border">

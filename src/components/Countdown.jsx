@@ -17,7 +17,14 @@ function getTimeLeft(targetMs) {
 // `targetDate` can be a Date, a timestamp or an ISO string — it is
 // normalised to a number so the interval below isn't torn down and rebuilt on
 // every render when the caller passes a fresh Date object.
-export default function Countdown({ targetDate, label, compact = false }) {
+//
+// `title` ({ name, when }) is the Accueil layout: a white title above the
+// boxes ("COURSE · dim. 18:00 CET"). With it, the last hour only turns the
+// boxes red (no "Dernière heure pour pronostiquer" label replacing the title).
+// `endText` is what shows at zero: the default "Pronostics verrouillés" fits
+// the race but not the qualifying session, which passes null (nothing shown).
+// Without `title`/`endText` the component behaves exactly as before.
+export default function Countdown({ targetDate, label, compact = false, title, endText }) {
   const targetMs = new Date(targetDate).getTime()
   const [timeLeft, setTimeLeft] = useState(() => getTimeLeft(targetMs))
 
@@ -27,10 +34,19 @@ export default function Countdown({ targetDate, label, compact = false }) {
     return () => clearInterval(interval)
   }, [targetMs])
 
+  const titleEl = title && (
+    <p className="text-xs text-white mb-3">
+      <span className="font-bold uppercase tracking-widest">{title.name}</span>
+      {title.when && <span> · {title.when}</span>}
+    </p>
+  )
+
   if (!timeLeft) {
+    if (endText === null) return null
     return (
       <div className="text-center">
-        <span className="text-accent font-bold text-sm">Pronostics verrouillés</span>
+        {titleEl}
+        <span className="text-accent font-bold text-sm">{endText ?? 'Pronostics verrouillés'}</span>
       </div>
     )
   }
@@ -53,7 +69,9 @@ export default function Countdown({ targetDate, label, compact = false }) {
 
   return (
     <div className="text-center">
-      {inLastHour
+      {title
+        ? titleEl
+        : inLastHour
         ? <p className="text-xs text-accent font-bold uppercase tracking-widest mb-3">Dernière heure pour pronostiquer</p>
         : label && <p className="text-xs text-muted uppercase tracking-widest mb-3">{label}</p>}
       <div className="flex items-center justify-center gap-2">
