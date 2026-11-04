@@ -212,6 +212,13 @@ export default function App() {
 
   const playerId = activePlayer?.id ?? null
   const activeLeagueName = leagues.find(l => l._id === effectiveActiveLeagueId)?.name ?? null
+  // Ligues du joueur (appartenance active), pour le menu de changement de ligue
+  // de l'en-tête. Triées par nom pour un ordre stable.
+  const leagueOptions = myPlayers
+    .map(p => leagues.find(l => l._id === p.leagueId))
+    .filter(Boolean)
+    .map(l => ({ id: l._id, name: String(l.name ?? '') }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
   const hasAnyLeague = myPlayers.length > 0
   const leaguesScreen = (
     <MesLigues
@@ -225,23 +232,26 @@ export default function App() {
     />
   )
 
+  // key = ligue active : à chaque changement de ligue (menu de l'en-tête) l'écran
+  // est recréé, ce qui relance ses lectures Firestore sur la nouvelle ligue
+  // (useCollection ne se réabonne pas quand ses contraintes changent).
   const renderScreen = () => {
     switch (activeTab) {
       case 'accueil':
         return hasAnyLeague
-          ? <Accueil currentPlayerId={playerId} setActiveTab={setActiveTab} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} addToast={addToast} />
+          ? <Accueil key={effectiveActiveLeagueId} leagueOptions={leagueOptions} onSwitchLeague={activateLeague} currentPlayerId={playerId} setActiveTab={setActiveTab} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} addToast={addToast} />
           : leaguesScreen
       case 'courses':
         return hasAnyLeague
-          ? <Courses currentPlayerId={playerId} addToast={addToast} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} setActiveTab={setActiveTab} />
+          ? <Courses key={effectiveActiveLeagueId} leagueOptions={leagueOptions} onSwitchLeague={activateLeague} currentPlayerId={playerId} addToast={addToast} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} setActiveTab={setActiveTab} />
           : leaguesScreen
       case 'classement':
         return hasAnyLeague
-          ? <Classement currentPlayerId={playerId} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} setActiveTab={setActiveTab} />
+          ? <Classement key={effectiveActiveLeagueId} leagueOptions={leagueOptions} onSwitchLeague={activateLeague} currentPlayerId={playerId} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} setActiveTab={setActiveTab} />
           : leaguesScreen
       case 'stats':
         return hasAnyLeague
-          ? <Stats currentPlayerId={playerId} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} setActiveTab={setActiveTab} />
+          ? <Stats key={effectiveActiveLeagueId} leagueOptions={leagueOptions} onSwitchLeague={activateLeague} currentPlayerId={playerId} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} setActiveTab={setActiveTab} />
           : leaguesScreen
       case 'leagues':
         return leaguesScreen
@@ -268,7 +278,7 @@ export default function App() {
         return <ReglagesSuperAdmin addToast={addToast} />
       default:
         return hasAnyLeague
-          ? <Accueil currentPlayerId={playerId} setActiveTab={setActiveTab} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} addToast={addToast} />
+          ? <Accueil key={effectiveActiveLeagueId} leagueOptions={leagueOptions} onSwitchLeague={activateLeague} currentPlayerId={playerId} setActiveTab={setActiveTab} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} addToast={addToast} />
           : leaguesScreen
     }
   }

@@ -12,8 +12,7 @@ import { getModificationCount } from '../utils/predictions'
 import { summarizePenalties } from '../utils/penalties'
 import { getDriverPhoto } from '../utils/drivers'
 import Countdown from '../components/Countdown'
-import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
-import PlayerBadge from '../components/PlayerBadge'
+import HeaderBadges from '../components/HeaderBadges'
 import PredictionSheet from '../components/PredictionSheet'
 import PredictionTimestamps, { formatPredTime } from '../components/PredictionTimestamps'
 import QualifyingPodium, { getQualifyingPodium } from '../components/QualifyingPodium'
@@ -77,7 +76,7 @@ function formatSessionWhen(ms) {
   return `${day} ${formatLocalTime(ms)} ${getLocalTzAbbr(ms)}`.trim()
 }
 
-export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId, addToast }) {
+export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId, leagueOptions, onSwitchLeague, addToast }) {
   const { user } = useAuth()
   const [predictionSheetOpen, setPredictionSheetOpen] = useState(false)
   const [selectedRace, setSelectedRace] = useState(null)
@@ -326,16 +325,20 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
       {/* ── Header ── */}
       <div className="px-5 pt-5 pb-4">
         {/* Row 1: league badge + player badge */}
-        <div className="flex items-center justify-between gap-3 mb-2">
-          {activeLeagueName ? <ActiveLeagueBadge name={activeLeagueName} /> : <span />}
-          <PlayerBadge
-            avatar={playerAvatar}
-            color={playerColor}
-            displayName={playerDisplayName}
-            points={currentPlayerStanding?.total ?? 0}
-            onClick={() => setActiveTab('monprofil')}
-          />
-        </div>
+        <HeaderBadges
+          leagueName={activeLeagueName}
+          leagueId={activeLeagueId}
+          leagueOptions={leagueOptions}
+          onSwitchLeague={onSwitchLeague}
+          onManageLeagues={() => setActiveTab?.('leagues')}
+          player={{
+            avatar: playerAvatar,
+            color: playerColor,
+            displayName: playerDisplayName,
+            points: currentPlayerStanding?.total ?? 0,
+          }}
+          onOpenProfile={() => setActiveTab?.('monprofil')}
+        />
         {/* Row 2: main title */}
         <h1 className="text-2xl font-black tracking-tight">
           Prono F1 Saison 2026

@@ -5,8 +5,7 @@ import { calculateAllSeasonScores } from '../utils/scoring'
 import { getProfile, getPlayerIdentity } from '../utils/profiles'
 import { getPenaltyAmount } from '../utils/penalties'
 import { getDriverTeam, getTeamColor } from '../data/drivers'
-import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
-import PlayerBadge from '../components/PlayerBadge'
+import HeaderBadges from '../components/HeaderBadges'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
@@ -29,7 +28,7 @@ function CustomTooltip({ active, payload, label }) {
   return null
 }
 
-export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueId, setActiveTab }) {
+export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueId, leagueOptions, onSwitchLeague, setActiveTab }) {
   const { user } = useAuth()
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
   const { data: players, loading: playersLoading, error: playersError } = useCollection(user ? 'players' : null, leagueConstraint)
@@ -227,16 +226,20 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
   return (
     <div className="pb-4">
       <div className="px-5 pt-5 pb-4">
-        <div className="flex items-center justify-between gap-3 mb-2">
-          {activeLeagueName ? <ActiveLeagueBadge name={activeLeagueName} /> : <span />}
-          <PlayerBadge
-            avatar={String(currentIdentity?.avatar ?? '🏎️')}
-            color={String(currentIdentity?.color ?? '#6B6B8A')}
-            displayName={String(currentIdentity?.displayName ?? currentPlayerId)}
-            points={currentPlayerTotal}
-            onClick={() => setActiveTab?.('monprofil')}
-          />
-        </div>
+        <HeaderBadges
+          leagueName={activeLeagueName}
+          leagueId={activeLeagueId}
+          leagueOptions={leagueOptions}
+          onSwitchLeague={onSwitchLeague}
+          onManageLeagues={() => setActiveTab?.('leagues')}
+          player={{
+            avatar: String(currentIdentity?.avatar ?? '🏎️'),
+            color: String(currentIdentity?.color ?? '#6B6B8A'),
+            displayName: String(currentIdentity?.displayName ?? currentPlayerId),
+            points: currentPlayerTotal,
+          }}
+          onOpenProfile={() => setActiveTab?.('monprofil')}
+        />
         <h1 className="text-2xl font-black tracking-tight">Statistiques</h1>
         <p className="text-sm text-muted">{completedRaces.length} course{completedRaces.length > 1 ? 's' : ''} analysée{completedRaces.length > 1 ? 's' : ''}</p>
       </div>

@@ -9,8 +9,7 @@ import { getPenaltyAmount } from '../utils/penalties'
 import { getDriverPhoto } from '../utils/drivers'
 import PredictionSheet from '../components/PredictionSheet'
 import Skeleton from '../components/Skeleton'
-import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
-import PlayerBadge from '../components/PlayerBadge'
+import HeaderBadges from '../components/HeaderBadges'
 
 const POSITIONS = ['P1', 'P2', 'P3']
 const POS_COLOR = { P1: 'text-gold', P2: 'text-silver', P3: 'text-bronze' }
@@ -37,7 +36,7 @@ function detailIcon(detail) {
   return '❌'
 }
 
-export default function Courses({ currentPlayerId, addToast, activeLeagueName, activeLeagueId, setActiveTab: setAppTab }) {
+export default function Courses({ currentPlayerId, addToast, activeLeagueName, activeLeagueId, leagueOptions, onSwitchLeague, setActiveTab: setAppTab }) {
   const { user } = useAuth()
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
   const { data: races, loading: racesLoading } = useCollection(user ? 'races' : null)
@@ -110,16 +109,20 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
     <div className="pb-4">
       {/* Header */}
       <div className="px-5 pt-5 pb-3">
-        <div className="flex items-center justify-between gap-3 mb-2">
-          {activeLeagueName ? <ActiveLeagueBadge name={activeLeagueName} /> : <span />}
-          <PlayerBadge
-            avatar={playerAvatar}
-            color={playerColor}
-            displayName={playerDisplayName}
-            points={currentPlayerTotal}
-            onClick={() => setAppTab?.('monprofil')}
-          />
-        </div>
+        <HeaderBadges
+          leagueName={activeLeagueName}
+          leagueId={activeLeagueId}
+          leagueOptions={leagueOptions}
+          onSwitchLeague={onSwitchLeague}
+          onManageLeagues={() => setAppTab?.('leagues')}
+          player={{
+            avatar: playerAvatar,
+            color: playerColor,
+            displayName: playerDisplayName,
+            points: currentPlayerTotal,
+          }}
+          onOpenProfile={() => setAppTab?.('monprofil')}
+        />
         <h1 className="text-2xl font-black tracking-tight mb-4">Courses 2026</h1>
         <div className="flex gap-2 bg-surfaceHigh rounded-xl p-1">
           {[

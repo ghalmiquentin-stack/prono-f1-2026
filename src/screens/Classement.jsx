@@ -3,8 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getProfile } from '../utils/profiles'
-import ActiveLeagueBadge from '../components/ActiveLeagueBadge'
-import PlayerBadge from '../components/PlayerBadge'
+import HeaderBadges from '../components/HeaderBadges'
 import Skeleton from '../components/Skeleton'
 
 // Dense ranking: same points → same rank, no gap after ties
@@ -39,7 +38,7 @@ function contentHeight(playerCount) {
   return playerCount * ITEM_H + Math.max(0, playerCount - 1) * ITEM_GAP + STEP_PAD
 }
 
-export default function Classement({ currentPlayerId, activeLeagueName, activeLeagueId, setActiveTab }) {
+export default function Classement({ currentPlayerId, activeLeagueName, activeLeagueId, leagueOptions, onSwitchLeague, setActiveTab }) {
   const { user } = useAuth()
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
   const { data: players, loading: playersLoading, error: playersError } = useCollection(user ? 'players' : null, leagueConstraint)
@@ -130,16 +129,20 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
   return (
     <div className="pb-4">
       <div className="px-5 pt-5 pb-4">
-        <div className="flex items-center justify-between gap-3 mb-2">
-          {activeLeagueName ? <ActiveLeagueBadge name={activeLeagueName} /> : <span />}
-          <PlayerBadge
-            avatar={String(currentPlayerStanding?.avatar ?? '🏎️')}
-            color={String(currentPlayerStanding?.color ?? '#6B6B8A')}
-            displayName={String(currentPlayerStanding?.displayName ?? currentPlayerId)}
-            points={currentPlayerStanding?.total ?? 0}
-            onClick={() => setActiveTab?.('monprofil')}
-          />
-        </div>
+        <HeaderBadges
+          leagueName={activeLeagueName}
+          leagueId={activeLeagueId}
+          leagueOptions={leagueOptions}
+          onSwitchLeague={onSwitchLeague}
+          onManageLeagues={() => setActiveTab?.('leagues')}
+          player={{
+            avatar: String(currentPlayerStanding?.avatar ?? '🏎️'),
+            color: String(currentPlayerStanding?.color ?? '#6B6B8A'),
+            displayName: String(currentPlayerStanding?.displayName ?? currentPlayerId),
+            points: currentPlayerStanding?.total ?? 0,
+          }}
+          onOpenProfile={() => setActiveTab?.('monprofil')}
+        />
         <h1 className="text-2xl font-black tracking-tight mb-1">Classement</h1>
         <p className="text-sm text-muted">
           {completedRaces.length} course{completedRaces.length !== 1 ? 's' : ''} disputée{completedRaces.length !== 1 ? 's' : ''}
