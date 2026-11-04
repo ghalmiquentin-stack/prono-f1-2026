@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pencil, Clock } from 'lucide-react'
+import { Pencil, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useRaceTiming } from '../hooks/useRaceTiming'
 import { useQualifyingPhase } from '../hooks/useQualifyingPhase'
@@ -76,10 +76,55 @@ function formatSessionWhen(ms) {
   return `${day} ${formatLocalTime(ms)} ${getLocalTzAbbr(ms)}`.trim()
 }
 
+// Longues listes (ligues de plus de quelques joueurs) : on garde les TOP_COUNT
+// premiers et le joueur courant ; chaque tronçon masqué d'au moins 2 joueurs est
+// remplacé par un séparateur « N autres joueurs ». Un tronçon d'un seul joueur
+// reste affiché (le séparateur prendrait autant de place que lui). Retourne une
+// liste d'éléments { type: 'player', player } ou { type: 'gap', count }.
+const TOP_COUNT = 5
+
+function limitListWithMe(list, meId) {
+  const meIndex = list.findIndex(p => p.id === meId)
+  const keep = new Set()
+  for (let i = 0; i < Math.min(TOP_COUNT, list.length); i++) keep.add(i)
+  if (meIndex >= 0) keep.add(meIndex)
+
+  const items = []
+  let i = 0
+  while (i < list.length) {
+    if (keep.has(i)) {
+      items.push({ type: 'player', player: list[i] })
+      i += 1
+      continue
+    }
+    let j = i
+    while (j < list.length && !keep.has(j)) j += 1
+    if (j - i <= 1) {
+      for (let k = i; k < j; k++) items.push({ type: 'player', player: list[k] })
+    } else {
+      items.push({ type: 'gap', count: j - i })
+    }
+    i = j
+  }
+  return items
+}
+
+function GapSeparator({ count }) {
+  return (
+    <div className="flex items-center gap-2 mx-2 text-[11px] text-muted before:content-[''] before:flex-1 before:border-t before:border-dashed before:border-[#3A3A52] after:content-[''] after:flex-1 after:border-t after:border-dashed after:border-[#3A3A52]">
+      {count} autres joueurs
+    </div>
+  )
+}
+
+// Pronostics du prochain GP : fiches des autres joueurs visibles avant le bouton « Voir les N autres joueurs ».
+const OTHERS_PREVIEW = 3
+
 export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId, leagueOptions, onSwitchLeague, addToast }) {
   const { user } = useAuth()
   const [predictionSheetOpen, setPredictionSheetOpen] = useState(false)
   const [selectedRace, setSelectedRace] = useState(null)
+  const [showAllOthers, setShowAllOthers] = useState(false)
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
   const { data: players, loading: playersLoading, error: playersError } = useCollection(user ? 'players' : null, leagueConstraint)
   const { data: profiles } = useCollection(user ? 'profiles' : null)
@@ -195,6 +240,13 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
   // the GP has actually started, same trigger as the countdown/auto-lock.
   const hidePredictionsActive = !!activeLeague?.rules?.hidePredictionsBeforeRace?.enabled
     && !!nextRace && !hasRaceStarted(nextRace)
+
+  // Carte « Pronostics » : les autres joueurs sont repliés après OTHERS_PREVIEW
+  // fiches, seulement si cela en cache au moins 2.
+  const otherPlayers = standings.filter(p => p.id !== currentPlayerId)
+  const hiddenOthers = Math.max(0, otherPlayers.length - OTHERS_PREVIEW)
+  const canFoldOthers = hiddenOthers >= 2
+  const visibleOthers = canFoldOthers && !showAllOthers ? otherPlayers.slice(0, OTHERS_PREVIEW) : otherPlayers
 
   // Full prediction card for one player — unchanged from before; only used
   // as-is when hiding is off, or for the current player's own card.
@@ -472,7 +524,9 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
               </button>
             </div>
             <div className="space-y-2">
-              {standings.map(player => {
+              {limitListWithMe(standings, currentPlayerId).map((item, idx) => {
+                if (item.type === 'gap') return <GapSeparator key={`gap-${idx}`} count={item.count} />
+                const player = item.player
                 const isCurrent = player.id === currentPlayerId
                 const identity = getProfile(profiles, player)
                 const color = String(identity?.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
@@ -528,7 +582,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                 <div className="pt-2 mt-1 border-t border-border">
                   <p className="text-[10px] text-muted uppercase tracking-wide font-bold mb-2">Les autres joueurs</p>
                 </div>
-                {standings.filter(p => p.id !== currentPlayerId).map(player => {
+                {visibleOthers.map(player => {
                   if (!hidePredictionsActive) return renderPredictionCard(player)
 
                   const identity = getProfile(profiles, player)
@@ -547,6 +601,17 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                     </div>
                   )
                 })}
+                {canFoldOthers && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllOthers(v => !v)}
+                    aria-expanded={showAllOthers}
+                    className="w-full min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl border border-border bg-surfaceHigh text-[13px] font-bold active:scale-95 transition-transform"
+                  >
+                    {showAllOthers ? 'Réduire la liste' : `Voir les ${hiddenOthers} autres joueurs`}
+                    {showAllOthers ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+                )}
               </div>
             </div>
           )
@@ -600,7 +665,9 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             {/* Points marqués par chaque joueur de la ligue sur ce GP précis */}
             <div className="mt-4 pt-4 border-t border-border space-y-1.5">
               <p className="text-[10px] text-muted uppercase tracking-wide font-bold mb-1">Points marqués sur ce GP</p>
-              {lastRaceRanking.map(player => {
+              {limitListWithMe(lastRaceRanking, currentPlayerId).map((item, idx) => {
+                if (item.type === 'gap') return <GapSeparator key={`gap-${idx}`} count={item.count} />
+                const player = item.player
                 const isCurrent = player.id === currentPlayerId
                 const identity = getProfile(profiles, player)
                 const color = String(identity?.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
