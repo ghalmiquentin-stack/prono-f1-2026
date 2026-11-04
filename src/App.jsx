@@ -16,6 +16,7 @@ import RejoindreLigue from './screens/RejoindreLigue'
 import ReglagesLigue from './screens/ReglagesLigue'
 import ReglagesSuperAdmin from './screens/ReglagesSuperAdmin'
 import ReglesDuJeu from './screens/ReglesDuJeu'
+import Intro from './screens/Intro'
 
 let _toastId = 0
 const ACTIVE_LEAGUE_STORAGE_KEY = 'prono_f1_active_league_id'
@@ -28,6 +29,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('accueil')
   const [selectedLeagueId, setSelectedLeagueId] = useState(null)
   const [toasts, setToasts] = useState([])
+  // Intro de bienvenue : demandée par ProfilSetup juste avant la création du profil,
+  // jamais persistée (un compte déjà créé ne la voit pas). Remise à zéro si le
+  // compte connecté change, pour ne pas la montrer au compte suivant.
+  const [showIntro, setShowIntro] = useState(false)
 
   const [activeLeagueId, setActiveLeagueIdState] = useState(() => {
     try {
@@ -106,6 +111,11 @@ export default function App() {
     const timeout = setTimeout(() => setPendingActiveLeagueId(null), 5000)
     return () => clearTimeout(timeout)
   }, [pendingActiveLeagueId])
+
+  // Un changement de compte connecté annule toute intro encore demandée.
+  useEffect(() => {
+    setShowIntro(false)
+  }, [user?.uid])
 
   // Reset the "initial landing tab" flag whenever the signed-in user changes
   // (fresh login, or logout → login again), so the one-time redirect below
@@ -201,9 +211,13 @@ export default function App() {
     return (
       <>
         <ToastContainer toasts={toasts} removeToast={removeToast} />
-        <ProfilSetup user={user} />
+        <ProfilSetup user={user} onSaveStart={() => setShowIntro(true)} onSaveError={() => setShowIntro(false)} />
       </>
     )
+  }
+
+  if (showIntro) {
+    return <Intro onDone={() => setShowIntro(false)} />
   }
 
   if (playersLoading) {

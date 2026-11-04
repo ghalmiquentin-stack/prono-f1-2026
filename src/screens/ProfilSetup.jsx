@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { upsertDoc } from '../hooks/useFirestore'
 import { PROFILE_COLORS, PROFILE_AVATARS } from '../data/profileOptions'
 
-export default function ProfilSetup({ user }) {
+// `onSaveStart` / `onSaveError` : App s'en sert pour afficher l'intro de bienvenue
+// juste après la création du profil (annulée si l'écriture échoue).
+export default function ProfilSetup({ user, onSaveStart, onSaveError }) {
   const [displayName, setDisplayName] = useState('')
   const [color, setColor] = useState(PROFILE_COLORS[0])
   const [avatar, setAvatar] = useState(PROFILE_AVATARS[0])
@@ -13,6 +15,9 @@ export default function ProfilSetup({ user }) {
     if (!displayName.trim() || !user?.uid) return
     setSaving(true)
     setError('')
+    // Avant l'écriture : le profil apparaît dès que Firestore renvoie l'écriture
+    // locale, l'intro doit déjà être demandée à ce moment-là.
+    onSaveStart?.()
     try {
       await upsertDoc('profiles', user.uid, {
         displayName: displayName.trim(),
@@ -20,6 +25,7 @@ export default function ProfilSetup({ user }) {
         avatar,
       })
     } catch {
+      onSaveError?.()
       setError('Erreur lors de la création du profil. Réessayez.')
     } finally {
       setSaving(false)
