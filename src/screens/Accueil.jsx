@@ -200,7 +200,11 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           {displayName}
           {mine && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
         </span>
-        <span className="text-xs text-muted">⏳ En attente de prono...</span>
+        {/* Une fois la course commencée, les pronostics sont verrouillés : même
+            libellé que la carte « Dernière course » plutôt qu'une attente. */}
+        <span className="text-xs text-muted">
+          {raceStarted ? 'Pas de prono' : '⏳ En attente de prono...'}
+        </span>
       </div>
     )
 
@@ -226,7 +230,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           {canEdit && (
             <button
               onClick={() => openRaceSheet(nextRace)}
-              className="p-1 rounded-lg text-muted hover:text-white transition-colors"
+              className="relative p-1 rounded-lg text-muted hover:text-white transition-colors after:absolute after:-inset-[11px]"
               aria-label="Modifier mon pronostic"
             >
               <Pencil size={14} />
@@ -410,7 +414,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                   ) : (
                     <button
                       onClick={() => openRaceSheet(nextRace)}
-                      className="text-xs bg-accent text-white font-bold px-3 py-1.5 rounded-lg"
+                      className="relative text-xs bg-accent text-white font-bold px-3 py-1.5 rounded-lg after:absolute after:-inset-y-2 after:inset-x-0"
                     >
                       Pronostiquer →
                     </button>
@@ -433,7 +437,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           <div className="card p-5">
             <div className="flex items-center justify-between mb-3">
               <span className="section-title">Classement général</span>
-              <button onClick={() => setActiveTab('classement')} className="text-xs text-accent font-bold">
+              <button onClick={() => setActiveTab('classement')} className="relative text-xs text-accent font-bold after:absolute after:-inset-y-3.5 after:inset-x-0">
                 Voir tout →
               </button>
             </div>
