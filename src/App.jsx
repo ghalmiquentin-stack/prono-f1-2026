@@ -217,7 +217,7 @@ export default function App() {
   const leagueOptions = myPlayers
     .map(p => leagues.find(l => l._id === p.leagueId))
     .filter(Boolean)
-    .map(l => ({ id: l._id, name: String(l.name ?? '') }))
+    .map(l => ({ id: l._id, name: String(l.name ?? ''), rules: l.rules ?? {} }))
     .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
   const hasAnyLeague = myPlayers.length > 0
   const leaguesScreen = (
@@ -273,7 +273,7 @@ export default function App() {
           />
         )
       case 'reglages-du-jeu':
-        return <ReglesDuJeu />
+        return <ReglesDuJeu leagues={leagueOptions} activeLeagueId={effectiveActiveLeagueId} />
       case 'admin':
         return <ReglagesSuperAdmin addToast={addToast} />
       default:

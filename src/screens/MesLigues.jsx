@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Trophy, Crown, Plus, LogIn, Settings, ShieldCheck, User, LogOut, MoreVertical, Trash2, BookOpen } from 'lucide-react'
+import { Trophy, Crown, Plus, LogIn, Settings, ShieldCheck, User, LogOut, MoreVertical, Trash2 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
@@ -7,8 +7,6 @@ import { getProfile } from '../utils/profiles'
 import LeaveLeagueSheet from '../components/LeaveLeagueSheet'
 import DeleteLeagueSheet from '../components/DeleteLeagueSheet'
 import PlayerBadge from '../components/PlayerBadge'
-import BottomSheet from '../components/BottomSheet'
-import LeagueRulesSummary from '../components/LeagueRulesSummary'
 import Skeleton from '../components/Skeleton'
 
 // Dense ranking: same points → same rank, no gap after ties
@@ -112,7 +110,6 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   const [leaveTarget, setLeaveTarget] = useState(null) // { profile, league, isLeagueAdmin }
   const [deleteTarget, setDeleteTarget] = useState(null) // { league }
   const [menuOpenFor, setMenuOpenFor] = useState(null) // league._id
-  const [rulesTarget, setRulesTarget] = useState(null) // league
 
   const isSoleAdmin = (league) =>
     Array.isArray(league.adminUids) && league.adminUids.length === 1 && league.adminUids.includes(user?.uid)
@@ -242,6 +239,9 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
                       <h3 className="font-black text-lg break-words">{league.name}</h3>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {/* Menu ⋮ réservé aux admins (Réglages, Supprimer) : les règles se lisent
+                          désormais dans Mon profil > Règles du jeu. */}
+                      {isLeagueAdmin && (
                       <div className="relative">
                         <button
                           onClick={e => { e.stopPropagation(); setMenuOpenFor(menuOpenFor === league._id ? null : league._id) }}
@@ -274,19 +274,12 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
                                     Supprimer la ligue
                                   </button>
                                 </>
-                              ) : (
-                                <button
-                                  onClick={e => { e.stopPropagation(); setMenuOpenFor(null); setRulesTarget(league) }}
-                                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-bold text-left hover:bg-surfaceHigh transition-colors"
-                                >
-                                  <BookOpen size={16} />
-                                  Voir les règles
-                                </button>
-                              )}
+                              ) : null}
                             </div>
                           </>
                         )}
                       </div>
+                      )}
                       <button
                         onClick={e => { e.stopPropagation(); openLeaveSheet({ profile, league, isLeagueAdmin }) }}
                         className="p-1.5 rounded-lg text-muted hover:text-accent transition-colors"
@@ -371,16 +364,6 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
         onDeleted={handleLeagueDeleted}
         addToast={addToast}
       />
-
-      <BottomSheet
-        isOpen={!!rulesTarget}
-        onClose={() => setRulesTarget(null)}
-        title={rulesTarget ? `Règles · ${rulesTarget.name}` : ''}
-      >
-        <div className="p-5 pb-10">
-          <LeagueRulesSummary rules={rulesTarget?.rules} />
-        </div>
-      </BottomSheet>
     </div>
   )
 }
