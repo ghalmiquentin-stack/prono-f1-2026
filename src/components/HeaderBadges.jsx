@@ -38,7 +38,7 @@ export default function HeaderBadges({
       ) : (
         <span />
       )}
-      <PlayerBadge {...player} onClick={onOpenProfile} />
+      <PlayerBadge {...player} onClick={onOpenProfile} className="max-w-[calc(100%-108px)]" />
     </div>
   )
 }
