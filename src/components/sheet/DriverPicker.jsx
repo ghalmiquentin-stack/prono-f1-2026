@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Check, History } from 'lucide-react'
 import BottomSheet from '../BottomSheet'
 import Portrait from './Portrait'
+import { shortTeam } from './driverUtils'
 import { STEP } from './PodiumSlots'
 import { TEAMS as STATIC_TEAMS } from '../../data/drivers'
 import { computePodiumCounts, groupTeamsByPodiums, driverCode } from '../../utils/sheetStats'
@@ -118,7 +119,7 @@ export default function DriverPicker({
             <div key={t.name} className="mb-2.5">
               <div className="flex items-center gap-1.5 mb-1">
                 <span className="w-2 h-2 rounded-full" style={{ background: t.colour }} />
-                <span className="text-[11px] font-bold tracking-widest uppercase text-muted">{t.name}</span>
+                <span className="text-[11px] font-bold tracking-widest uppercase text-muted">{shortTeam(t.name)}</span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {t.drivers.map(d => {

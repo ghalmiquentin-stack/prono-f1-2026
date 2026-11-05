@@ -22,7 +22,7 @@ export default function RaceHeader({ race, round, mode, started, now, result }) 
 
   return (
     <div className="px-5 pt-1 pb-3 border-b border-border">
-      <div className="flex items-center gap-2.5 min-h-[30px] pr-10">
+      <div className="flex items-center gap-2.5 min-h-[30px]">
         {round != null && (
           <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[13px] font-black shrink-0">{round}</div>
         )}
