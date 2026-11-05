@@ -131,7 +131,7 @@ const OTHERS_PREVIEW = 3
 // soit des puces « 3j 2h 5min », soit un texte (ex. horaire pas encore connu).
 function NextLine({ name, when, parts, text }) {
   return (
-    <div className="mt-4 rounded-xl bg-bg/50 border border-border/70 px-3 py-2 flex items-center justify-between gap-2">
+    <div className="mt-6 rounded-xl bg-bg/50 border border-border/70 px-3 py-2.5 flex items-center justify-between gap-2">
       <p className="text-[11px] text-muted leading-tight">
         <span className="font-bold uppercase tracking-widest text-white">{name}</span><br />{when ?? text}
       </p>
@@ -555,24 +555,24 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
         {loading ? (
           <SkeletonCard />
         ) : nextRace ? (
-          <div className="card p-5 relative overflow-hidden">
+          <div className="card p-6 relative overflow-hidden">
             <CircuitTrack race={nextRace} size={230} className="absolute -right-8 top-8 opacity-[0.07] pointer-events-none" />
             <div className="relative">
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-accent font-bold text-xs uppercase tracking-widest pt-1">Prochain GP</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-accent font-bold text-xs uppercase tracking-widest">Prochain GP</span>
                 <span className={`shrink-0 flex items-center gap-1.5 text-xs font-bold ${myPrediction ? 'text-green-400' : raceStarted ? 'text-muted' : 'text-accent'}`}>
                   <span className={`w-2 h-2 rounded-full ${myPrediction ? 'bg-green-500' : raceStarted ? 'bg-muted' : 'bg-accent animate-pulse'}`} />
                   {myPrediction ? 'Pronostic soumis' : raceStarted ? 'Pas de prono' : 'Pas encore de prono'}
                 </span>
               </div>
-              <div className="flex items-center gap-3 mt-3 mb-4">
+              <div className="flex items-center gap-3 mt-5 mb-6">
                 <span className="text-4xl leading-none">{nextRace.flag}</span>
                 <div className="min-w-0">
                   <h2 className="text-2xl font-black leading-tight">GP {nextRace.name}</h2>
-                  <p className="text-xs text-muted mt-0.5">
+                  <p className="text-xs text-muted mt-1">
                     {nextRound != null && `Manche ${nextRound} · `}{formatLongDate(nextRace.date)}
                   </p>
-                  {circuitLabel(nextRace) && <p className="text-xs text-white/70 leading-tight mt-0.5">{circuitLabel(nextRace)}</p>}
+                  {circuitLabel(nextRace) && <p className="text-xs text-white/70 leading-tight mt-1">{circuitLabel(nextRace)}</p>}
                 </div>
               </div>
 
@@ -605,7 +605,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
 
               {/* Podium des qualifications (races.qualifying) : seulement si P1, P2 et P3 sont connus. */}
               {qualifyingPodium && (
-                <div className="mt-4 pt-4 border-t border-border/60">
+                <div className="mt-6 pt-5 border-t border-border/60">
                   <p className="text-[11px] text-muted uppercase tracking-wide font-bold mb-2 text-center">Podium des qualifications</p>
                   <CompactPodium
                     result={Object.fromEntries(qualifyingPodium.map(e => [e.pos, e.name]))}
@@ -617,12 +617,15 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
 
               {/* Pronostiquer : seulement sans pronostic et avant le départ. */}
               {!myPrediction && !raceStarted && (
-                <button
-                  onClick={() => openRaceSheet(nextRace)}
-                  className="mt-4 w-full text-sm bg-accent text-white font-bold py-3 rounded-xl active:scale-95 transition-transform"
-                >
-                  Pronostiquer →
-                </button>
+                <div className="mt-6 flex justify-center">
+                  {/* Petit bouton ; la zone tactile reste de 44 px grâce au pseudo-élément. */}
+                  <button
+                    onClick={() => openRaceSheet(nextRace)}
+                    className="relative text-xs bg-accent text-white font-bold px-5 py-2 rounded-lg active:scale-95 transition-transform after:absolute after:-inset-y-3 after:inset-x-0"
+                  >
+                    Pronostiquer →
+                  </button>
+                </div>
               )}
             </div>
           </div>
