@@ -618,10 +618,10 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
               {/* Pronostiquer : seulement sans pronostic et avant le départ. */}
               {!myPrediction && !raceStarted && (
                 <div className="mt-6 flex justify-center">
-                  {/* Petit bouton ; la zone tactile reste de 44 px grâce au pseudo-élément. */}
+                  {/* Même largeur que les quatre cases du compteur (248 px) pour rester dans leur axe. */}
                   <button
                     onClick={() => openRaceSheet(nextRace)}
-                    className="relative text-xs bg-accent text-white font-bold px-5 py-2 rounded-lg active:scale-95 transition-transform after:absolute after:-inset-y-3 after:inset-x-0"
+                    className="w-[248px] max-w-full min-h-[40px] text-sm bg-accent text-white font-bold rounded-xl active:scale-95 transition-transform"
                   >
                     Pronostiquer →
                   </button>
