@@ -549,7 +549,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             <CircuitTrack race={nextRace} size={230} className="absolute -right-8 top-8 opacity-[0.07] pointer-events-none" />
             <div className="relative">
               <div className="flex items-center justify-between gap-2">
-                <span className="section-title !mb-0">Prochain GP</span>
+                <span className="text-xs font-black uppercase tracking-widest text-white">Prochain GP</span>
                 <span className={`shrink-0 flex items-center gap-1.5 text-xs font-bold ${myPrediction ? 'text-green-400' : raceStarted ? 'text-muted' : 'text-accent'}`}>
                   <span className={`w-2 h-2 rounded-full ${myPrediction ? 'bg-green-500' : raceStarted ? 'bg-muted' : 'bg-accent animate-pulse'}`} />
                   {myPrediction ? 'Pronostic soumis' : raceStarted ? 'Pas de prono' : 'Pas encore de prono'}
@@ -631,8 +631,8 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           <SkeletonCard />
         ) : standings.length > 0 ? (
           <div className="card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="section-title">Classement général</span>
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <h3 className="text-lg font-black leading-tight text-white">Classement général</h3>
               <button onClick={() => setActiveTab('classement')} className="relative text-xs text-accent font-bold after:absolute after:-inset-y-3.5 after:inset-x-0">
                 Voir tout →
               </button>
@@ -687,8 +687,8 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             <SkeletonCard />
           ) : (
             <div className="card p-5">
-              <div className="flex items-center justify-between mb-3">
-                <span className="section-title !mb-0">Pronostics — GP {nextRace.name}</span>
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <h3 className="text-lg font-black leading-tight text-white">Pronostics — GP {nextRace.name}</h3>
               </div>
               {(() => {
                 const me = standings.find(p => p.id === currentPlayerId)
@@ -738,11 +738,11 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           <SkeletonCard />
         ) : lastRace?.result ? (
           <div className="card p-5">
-            <div className="flex items-start gap-3">
-              <span className="text-3xl leading-none mt-0.5">{lastRace.flag}</span>
+            <p className="text-xs font-black uppercase tracking-widest text-white mb-4">Dernière course</p>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl leading-none">{lastRace.flag}</span>
               <div className="flex-1 min-w-0">
-                <span className="section-title !mb-0">Dernière course</span>
-                <h3 className="font-black text-base leading-tight">GP {lastRace.name}</h3>
+                <h3 className="font-black text-lg leading-tight">GP {lastRace.name}</h3>
                 <p className="text-xs text-muted">
                   {formatLongDate(lastRace.date)}
                   {formatRaceLocalTimeWithTz(lastRace) && (
