@@ -549,7 +549,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             <CircuitTrack race={nextRace} size={230} className="absolute -right-8 top-8 opacity-[0.07] pointer-events-none" />
             <div className="relative">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-accent font-bold text-xs uppercase tracking-widest">Prochain GP</span>
+                <span className="section-title !mb-0">Prochain GP</span>
                 <span className={`shrink-0 flex items-center gap-1.5 text-xs font-bold ${myPrediction ? 'text-green-400' : raceStarted ? 'text-muted' : 'text-accent'}`}>
                   <span className={`w-2 h-2 rounded-full ${myPrediction ? 'bg-green-500' : raceStarted ? 'bg-muted' : 'bg-accent animate-pulse'}`} />
                   {myPrediction ? 'Pronostic soumis' : raceStarted ? 'Pas de prono' : 'Pas encore de prono'}
@@ -741,7 +741,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             <div className="flex items-start gap-3">
               <span className="text-3xl leading-none mt-0.5">{lastRace.flag}</span>
               <div className="flex-1 min-w-0">
-                <span className="text-accent font-bold text-xs uppercase tracking-widest">Dernière course</span>
+                <span className="section-title !mb-0">Dernière course</span>
                 <h3 className="font-black text-base leading-tight">GP {lastRace.name}</h3>
                 <p className="text-xs text-muted">
                   {formatLongDate(lastRace.date)}
