@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { LockOpen, Lock, Ban, AlertTriangle } from 'lucide-react'
 import { useDocument, upsertDoc } from '../hooks/useFirestore'
 import { calculateRaceScore, detailPoints } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
@@ -6,34 +7,23 @@ import { getModificationCount } from '../utils/predictions'
 import { useRaceTiming } from '../hooks/useRaceTiming'
 import { useQualifyingSwitch } from '../hooks/useQualifyingSwitch'
 import { usePenaltyConfirm } from '../hooks/usePenaltyConfirm'
+import { useNowEvery } from '../hooks/useNowEvery'
 import { getPenaltyAmount } from '../utils/penalties'
 import {
-  getPenaltyRule, getPenaltyContext, buildQualifyingBannerText, buildPenaltyConfirm,
+  getPenaltyRule, getPenaltyContext, buildPenaltyConfirm,
 } from '../utils/qualifyingPenalty'
-import { formatRaceLocalTime, raceStartInstant } from '../utils/races'
-import { TEAMS, getTeamColor, getDriverTeam } from '../data/drivers'
-import { getDriverPhoto } from '../utils/drivers'
+import { withRoundNumbers } from '../utils/races'
+import { rankOf } from '../utils/sheetStats'
 import BottomSheet from './BottomSheet'
 import ConfirmModal from './ConfirmModal'
-import PredictionTimestamps from './PredictionTimestamps'
-import Countdown from './Countdown'
+import RaceHeader from './sheet/RaceHeader'
+import { PodiumCard } from './sheet/PodiumSlots'
+import HistoryBlock from './sheet/HistoryBlock'
+import QualifyingBlock from './sheet/QualifyingBlock'
+import PlayersTable from './sheet/PlayersTable'
+import DriverPicker from './sheet/DriverPicker'
 
 const POSITIONS = ['P1', 'P2', 'P3']
-const POS_COLOR = { P1: 'text-gold', P2: 'text-silver', P3: 'text-bronze' }
-const POS_BG    = { P1: 'bg-gold',   P2: 'bg-silver',   P3: 'bg-bronze'   }
-
-// Group Firebase drivers by team, sorted by team name
-function groupDriversByTeam(drivers) {
-  const map = {}
-  for (const d of drivers) {
-    const team = d.team_name ?? 'Unknown'
-    if (!map[team]) map[team] = { name: team, colour: d.team_colour ?? '#6B6B8A', drivers: [] }
-    map[team].drivers.push(d)
-  }
-  return Object.values(map).sort((a, b) => a.name.localeCompare(b.name))
-}
-
-const toTitle = s => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : null
 
 // Shared race-prediction modal — used from both Courses (clicking a race
 // card) and Accueil (clicking "Pronostiquer" on the next GP). Owns all
@@ -48,14 +38,12 @@ export default function PredictionSheet({
   const [activePosition, setActivePosition] = useState(null)
   const [driverPickerOpen, setDriverPickerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState('pronostics')
 
   // League rules — read here (not passed down) so the modal stays correct
   // regardless of which screen opens it.
   const { data: league } = useDocument(activeLeagueId ? 'leagues' : null, activeLeagueId)
-  const modPenaltyEnabled = !!league?.rules?.modificationPenalty?.enabled
   // Active modification penalty with a strictly positive numeric amount (null
-  // otherwise): the pre-qualifying banner below never shows "-0 pts".
+  // otherwise): the pre-qualifying notice below never shows "-0 pts".
   const modPenaltyRule = getPenaltyRule(league, true)
 
   // Reactive view of the selected race (stays fresh after Firebase writes)
@@ -63,6 +51,12 @@ export default function PredictionSheet({
     () => race ? (races.find(r => r.id === race.id) ?? race) : null,
     [races, race]
   )
+
+  // Display round number (position in the id-sorted calendar), shown in the header.
+  const round = useMemo(() => {
+    if (!race) return null
+    return withRoundNumbers([...races].sort((a, b) => a.id - b.id)).find(r => r.id === race.id)?.round ?? race.round ?? null
+  }, [races, race])
 
   // Real roster of the active league (players prop is already scoped by the
   // caller via leagueConstraint), sorted deterministically so per-player
@@ -95,7 +89,10 @@ export default function PredictionSheet({
   // timer) so the penalty banner can appear while the sheet is already open.
   const { switched: qualifyingSwitched } = useQualifyingSwitch(currentRace)
 
-  // Re-initialize the draft/tab every time the sheet transitions to open —
+  // Display clock for the "Départ dans" boxes only (no decision depends on it).
+  const now = useNowEvery(30000)
+
+  // Re-initialize the draft every time the sheet transitions to open —
   // mirrors the previous openRaceSheet() click handler, which always ran
   // fresh regardless of whether the same race was reopened.
   const prevOpenRef = useRef(false)
@@ -103,21 +100,9 @@ export default function PredictionSheet({
     if (isOpen && !prevOpenRef.current && race) {
       const existing = getMyPrediction(race.id)
       setDraftPrediction(existing?.prediction ?? { P1: null, P2: null, P3: null })
-      setActiveTab(race.status === 'upcoming' ? 'pronostics' : 'result')
     }
     prevOpenRef.current = isOpen
   }, [isOpen, race])
-
-  // Safety net: the "Résultat" tab button only renders while the race is
-  // completed — if activeTab is somehow left on 'result' when it stops being
-  // completed (e.g. an admin reset while the sheet was already open), fall
-  // back to Pronostics instead of showing content with no matching tab.
-  useEffect(() => {
-    if (currentRace && currentRace.status !== 'completed' && activeTab === 'result') {
-      setActiveTab('pronostics')
-    }
-  }, [currentRace?.status, activeTab])
-
 
   const handleClose = () => {
     setActivePosition(null)
@@ -139,6 +124,24 @@ export default function PredictionSheet({
 
   const clearPosition = (pos) =>
     setDraftPrediction(prev => ({ ...prev, [pos]: null }))
+
+  // Touching the already-chosen driver again removes it (no ✕ on the portraits).
+  const choosePicked = (driver) => {
+    if (!activePosition) return
+    if (draftPrediction[activePosition] === driver) {
+      clearPosition(activePosition)
+      setDriverPickerOpen(false)
+      setActivePosition(null)
+      return
+    }
+    selectDriver(driver)
+  }
+
+  const openPicker = (pos) => {
+    if (locked) return
+    setActivePosition(pos)
+    setDriverPickerOpen(true)
+  }
 
   const canSave = draftPrediction.P1 && draftPrediction.P2 && draftPrediction.P3
 
@@ -222,403 +225,201 @@ export default function PredictionSheet({
     if (locked || !isOpen) penaltyConfirm.reset()
   }, [locked, isOpen])
 
+  // ── Display-only derivations ───────────────────────────────────────────────
+  const mode = !currentRace ? 'upcoming'
+    : currentRace.status === 'cancelled' ? 'cancelled'
+    : currentRace.status === 'completed' ? 'completed'
+    : 'upcoming'
+
+  // From 30 s before qualifyingStartAt, when the matching league rule is
+  // active, the warning below replaces the pre-qualifying notice.
+  const switchRule = mode === 'upcoming' && !locked && qualifyingSwitched
+    ? getPenaltyRule(league, !!myPred)
+    : null
+
+  // Last podium of this player (most recent earlier race with a prediction)
+  // and previous edition podium: reminders only, never used for scoring.
+  const lastPodium = useMemo(() => {
+    if (!race) return []
+    const earlier = predictions
+      .filter(p => p.playerId === currentPlayerId && p.raceId !== race.id && p.raceId < race.id && p.prediction)
+      .sort((a, b) => b.raceId - a.raceId)[0]
+    return earlier ? POSITIONS.map(pos => earlier.prediction[pos]).filter(Boolean) : []
+  }, [predictions, currentPlayerId, race])
+
+  const previousPodium = useMemo(() => {
+    if (!raceHistory?.podium || currentRace?.firstEdition) return []
+    return POSITIONS.map(pos => raceHistory.podium[pos]?.name).filter(Boolean)
+  }, [raceHistory, currentRace])
+
+  // Completed race: one row per player, best score first, players without a
+  // prediction last. Same scoring as before (calculateRaceScore + penalties).
+  const rows = useMemo(() => {
+    if (mode !== 'completed' || !currentRace?.result) return []
+    const list = playerIds.map((pid, index) => {
+      const playerData = players.find(p => p.id === pid)
+      const identity = getPlayerIdentity(profiles, playerData, index)
+      const base = {
+        id: pid,
+        color: String(identity.color),
+        avatar: String(identity.avatar),
+        name: String(identity.displayName),
+      }
+      const pred = predictions.find(p => p.playerId === pid && p.raceId === currentRace.id)
+      if (!pred) return { ...base, none: true, net: null }
+      const { raw, bonus, total, details, perfectPodium } = calculateRaceScore(pred.prediction, currentRace.result)
+      const pen = penalties
+        .filter(p => p.playerId === pid && p.raceId === currentRace.id)
+        .reduce((s, p) => s + getPenaltyAmount(p), 0)
+      return {
+        ...base,
+        pred,
+        picks: POSITIONS.map(pos => pred.prediction[pos]),
+        st: POSITIONS.map(pos => details[pos]),
+        pts: POSITIONS.map(pos => detailPoints(details[pos])),
+        raw, bonus, gross: total, pen, net: total - pen, perfect: perfectPodium,
+      }
+    })
+    return list.sort((a, b) => (b.net ?? -Infinity) - (a.net ?? -Infinity) || a.name.localeCompare(b.name, 'fr'))
+  }, [mode, currentRace, playerIds, players, profiles, predictions, penalties])
+
+  const me = rows.find(r => r.id === currentPlayerId)
+  const headerResult = me ? {
+    none: !!me.none,
+    net: me.net, raw: me.raw, bonus: me.bonus ?? 0, pen: me.pen ?? 0, perfect: !!me.perfect,
+    rank: me.none ? null : rankOf(rows, me.net),
+    tied: !me.none && rows.filter(r => r.net === me.net).length > 1,
+    total: rows.length,
+    color: me.color,
+  } : { none: true }
+
+  const hasDraft = POSITIONS.some(p => draftPrediction[p])
+
+  // ── Fixed footer (upcoming races only) ─────────────────────────────────────
+  const footer = mode === 'upcoming' && currentRace ? (
+    <div className="px-5 pt-2 pb-2">
+      {locked ? (
+        <div className="w-full py-2 rounded-xl bg-surfaceHigh text-muted flex flex-col items-center justify-center min-h-[52px]">
+          <span className="flex items-center gap-2 font-black text-base text-white/80"><Lock size={16} />Pronostics verrouillés</span>
+          <span className="text-[11px] leading-tight">Le Grand Prix a commencé</span>
+        </div>
+      ) : (
+        <button
+          onClick={penaltyConfirm.request}
+          disabled={!canSave || saving}
+          className={`w-full py-3 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
+            canSave && !saving ? 'bg-accent text-white shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
+          }`}
+        >
+          {saving
+            ? 'Enregistrement...'
+            : canSave
+              ? (switchRule ? `Valider mon pronostic · -${switchRule.amount} pts` : 'Valider mon pronostic')
+              : 'Complétez le podium'}
+        </button>
+      )}
+    </div>
+  ) : null
+
   return (
     <>
       {/* ── Race detail sheet ── */}
       <BottomSheet
         isOpen={isOpen}
         onClose={handleClose}
-        title={race ? `GP ${race.name} ${race.flag}` : ''}
-        fullHeight
+        bare
+        fixedHeight
+        footer={footer}
       >
         {race && currentRace && (
-          <div className="flex flex-col h-full">
-            {/* Race info */}
-            <div className="px-5 pt-4 pb-3 border-b border-border shrink-0">
-              <div className="flex items-start gap-3">
-                <div className="flex-1">
-                  <p className="text-xs text-muted">{currentRace.city} · {currentRace.circuit}</p>
-                  <p className="text-sm font-bold">
-                    {new Date(currentRace.date + 'T00:00:00').toLocaleDateString('fr-FR', {
-                      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-                    })}
-                  </p>
-                  {formatRaceLocalTime(currentRace) && (
-                    <p className="text-xs text-accent font-bold mt-0.5">{formatRaceLocalTime(currentRace)}</p>
-                  )}
-                </div>
-                {currentRace.status === 'upcoming' && (
-                  <Countdown
-                    targetDate={raceStartInstant(currentRace)}
-                    compact
-                  />
-                )}
-              </div>
-            </div>
+          <div>
+            <RaceHeader
+              race={currentRace}
+              round={round}
+              mode={mode}
+              started={raceStarted}
+              now={now}
+              result={headerResult}
+            />
 
-            {currentRace.status === 'cancelled' ? (
-              /* ── Grand Prix annulé ── pas d'onglets, pas de podium/pronostics */
-              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
-                <span className="text-4xl">🚫</span>
-                <p className="font-bold text-base">Ce Grand Prix a été annulé.</p>
-                <p className="text-xs text-muted">Aucun pronostic ni résultat ne sera comptabilisé pour cette course.</p>
+            {/* ── GP annulé ── */}
+            {mode === 'cancelled' && (
+              <div className="px-5 pt-5">
+                <div className="card px-5 py-8 flex flex-col items-center text-center gap-3">
+                  <span className="w-14 h-14 rounded-full bg-accent/15 border border-accent/30 flex items-center justify-center"><Ban size={26} className="text-accent" /></span>
+                  <p className="text-lg font-black leading-tight">Ce Grand Prix a été annulé</p>
+                  <p className="text-sm text-muted leading-snug">Aucun pronostic ni résultat ne sera comptabilisé pour cette course.</p>
+                </div>
               </div>
-            ) : (
+            )}
+
+            {/* ── Course à venir : mon podium ── */}
+            {mode === 'upcoming' && (
               <>
-            {/* Tab bar — "Résultat" only makes sense once the race is completed */}
-            <div className="flex gap-0 border-b border-border shrink-0">
-              {[
-                { id: 'pronostics', label: 'Pronostics' },
-                ...(currentRace.status === 'completed' ? [{ id: 'result', label: 'Résultat' }] : []),
-                { id: 'history',   label: 'Historique' },
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 py-2.5 text-xs font-bold transition-all border-b-2 ${
-                    activeTab === tab.id
-                      ? 'border-accent text-white'
-                      : 'border-transparent text-muted'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Tab content */}
-            <div className="flex-1 overflow-y-auto p-5 pb-10 space-y-5">
-
-              {/* ── ONGLET PRONOSTICS ── */}
-              {activeTab === 'pronostics' && currentRace.status === 'completed' && currentRace.result && (
-                <div className="space-y-3">
-                  <p className="section-title">Pronostics des joueurs</p>
-                  {playerIds.map((pid, index) => {
-                    const playerData = players.find(p => p.id === pid)
-                    const identity = getPlayerIdentity(profiles, playerData, index)
-                    const pidColor  = String(identity.color)
-                    const pidAvatar = String(identity.avatar)
-                    const pidName   = String(identity.displayName)
-                    const pred = predictions.find(p => p.playerId === pid && p.raceId === currentRace.id)
-                    const pens = penalties.filter(p => p.playerId === pid && p.raceId === currentRace.id)
-                    if (!pred) return (
-                      <div key={pid} className="card p-3 flex items-center gap-3 opacity-50">
-                        <span>{pidAvatar}</span>
-                        <span className="font-bold text-sm flex-1">{pidName}</span>
-                        <span className="text-xs text-muted">Pas de prono</span>
-                      </div>
-                    )
-                    const { total, details, perfectPodium } = calculateRaceScore(pred.prediction, currentRace.result)
-                    const penTotal = pens.reduce((s, p) => s + getPenaltyAmount(p), 0)
-                    const net = total - penTotal
-                    return (
-                      <div key={pid} className="card p-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span>{pidAvatar}</span>
-                          <span className="font-bold text-sm flex-1">{pidName}</span>
-                          {perfectPodium && <span className="text-xs text-gold">⭐ Parfait</span>}
-                          {penTotal > 0 && <span className="text-xs text-accent font-bold">-{penTotal} pén.</span>}
-                          <span className="font-black text-base" style={{ color: pidColor }}>{net} pts</span>
-                        </div>
-                        <PredictionTimestamps
-                          prediction={pred}
-                          penalties={penalties}
-                          playerId={pid}
-                          raceId={currentRace.id}
-                          className="mb-2"
-                        />
-                        <div className="grid grid-cols-3 gap-2">
-                          {POSITIONS.map(pos => {
-                            const driverName = pred.prediction[pos]
-                            const photoUrl   = getDriverPhoto(drivers, driverName)
-                            const detail     = details[pos]
-                            const isModified = getModificationCount(pred) > 0 && pred.prediction[pos] !== pred.initialPrediction?.[pos]
-                            return (
-                              <div
-                                key={pos}
-                                className={`rounded-lg p-2 text-center border ${
-                                  detail === 'exact'  ? 'border-green-500  bg-green-500/10'  :
-                                  detail === 'podium' ? 'border-yellow-500 bg-yellow-500/10' :
-                                  'border-border bg-surfaceHigh/50'
-                                }`}
-                              >
-                                <div className={`text-[9px] font-bold mb-1 ${POS_COLOR[pos]}`}>{pos}</div>
-                                <div className="w-11 h-11 rounded-full overflow-hidden mx-auto mb-1 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                                  {photoUrl
-                                    ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                                    : <span>{driverName?.[0] ?? '?'}</span>
-                                  }
-                                </div>
-                                <div className="text-xs font-bold truncate">{driverName}</div>
-                                <div className={`text-[9px] font-bold mt-1 ${
-                                  detail === 'exact'  ? 'text-green-400'  :
-                                  detail === 'podium' ? 'text-yellow-400' : 'text-muted'
-                                }`}>
-                                  {detailPoints(detail) > 0 ? `+${detailPoints(detail)}` : '0'}
-                                </div>
-                                {isModified && (
-                                  <span className="inline-block text-[8px] font-bold px-1 py-0.5 rounded mt-0.5" style={{ color: '#E8002D', backgroundColor: '#E8002D22' }}>Modifié</span>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
-              {activeTab === 'pronostics' && currentRace.status !== 'completed' && (() => {
-                const existingPred = getMyPrediction(currentRace.id)
-                // From 30 s before qualifyingStartAt, when the matching league
-                // rule is active, this banner replaces the pre-qualifying one
-                // below (which stays untouched before the switch).
-                const switchRule = !locked && qualifyingSwitched ? getPenaltyRule(league, !!existingPred) : null
-                return (
-                  <div className="space-y-5">
-                    <div>
-                      <p className="section-title">Votre pronostic podium</p>
-                      {switchRule && (
-                        <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                          <span className="text-sm">⚠️</span>
-                          <p className="text-xs text-yellow-400 font-bold">
-                            {buildQualifyingBannerText(switchRule)}
-                          </p>
-                        </div>
-                      )}
-                      {!switchRule && existingPred && !locked && (
-                        modPenaltyRule ? (
-                          <div className="mb-3 flex items-center gap-2 p-2.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                            <span className="text-sm">⚠️</span>
-                            <p className="text-xs text-yellow-400 font-bold">
-                              Les modifications sont gratuites jusqu'au début des qualifications.{' '}Ensuite, chaque modification coûte -{modPenaltyRule.amount} pts.
-                            </p>
-                          </div>
-                        ) : !modPenaltyEnabled ? (
-                          <div className="mb-3 flex items-center gap-2 p-2.5 bg-surfaceHigh/50 border border-border rounded-lg">
-                            <span className="text-sm">ℹ️</span>
-                            <p className="text-xs text-muted font-bold">
-                              Vous pouvez modifier votre podium autant de fois que vous le souhaitez avant le départ de la course.
-                            </p>
-                          </div>
-                        ) : null
-                      )}
-                      <div className="space-y-3">
-                        {POSITIONS.map((pos, i) => {
-                          const driver = draftPrediction[pos]
-                          const teamColor = driver ? getTeamColor(driver) : null
-                          const photoUrl  = driver ? getDriverPhoto(drivers, driver) : null
-                          return (
-                            <button
-                              key={pos}
-                              disabled={locked}
-                              onClick={() => { setActivePosition(pos); setDriverPickerOpen(true) }}
-                              className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${
-                                locked ? 'cursor-not-allowed opacity-70' : 'active:scale-[0.98]'
-                              } ${driver ? '' : 'border-dashed border-border'}`}
-                              style={driver ? { borderColor: teamColor + '80', backgroundColor: teamColor + '15' } : {}}
-                            >
-                              <div className={`position-badge text-bg font-black text-sm shrink-0 ${POS_BG[pos]}`}>{i + 1}</div>
-                              {driver ? (
-                                <>
-                                  <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                                    {photoUrl
-                                      ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                                      : <span>{driver?.[0] ?? '?'}</span>
-                                    }
-                                  </div>
-                                  <div className="flex-1 text-left">
-                                    <p className="font-bold text-sm">{driver}</p>
-                                    <p className="text-xs text-muted">{getDriverTeam(driver)?.name}</p>
-                                  </div>
-                                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: teamColor }} />
-                                  {!locked && (
-                                    <span
-                                      className="text-muted text-sm"
-                                      onClick={e => { e.stopPropagation(); clearPosition(pos) }}
-                                    >✕</span>
-                                  )}
-                                </>
-                              ) : (
-                                <span className="text-muted text-sm flex-1 text-left">
-                                  {pos === 'P1' ? 'Choisir le vainqueur' : pos === 'P2' ? 'Choisir le 2e' : 'Choisir le 3e'}
-                                </span>
-                              )}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
+                <div className="px-5 pt-3">
+                  <div className="flex items-baseline justify-between !mb-2">
+                    <p className="section-title !mb-2">Ton podium</p>
                     {locked ? (
-                      <p className="text-center text-sm text-accent font-bold p-3 bg-accent/10 border border-accent/30 rounded-xl">
-                        Pronostics verrouillés : le Grand Prix a commencé
-                      </p>
-                    ) : (
-                      <button
-                        onClick={penaltyConfirm.request}
-                        disabled={!canSave || saving}
-                        className={`w-full py-4 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
-                          canSave && !saving ? 'bg-accent text-white shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                        }`}
-                      >
-                        {saving ? 'Enregistrement...' : canSave ? 'Valider mon pronostic' : 'Complétez le podium'}
-                      </button>
-                    )}
+                      <p className="flex items-center gap-1 text-[11px] text-muted mb-2"><Lock size={11} />{hasDraft ? 'Pronostic verrouillé' : 'Aucun pronostic'}</p>
+                    ) : hasDraft ? (
+                      <p className="text-[11px] text-muted mb-2">Touche un pilote pour le changer</p>
+                    ) : null}
                   </div>
-                )
-              })()}
+                  <PodiumCard values={draftPrediction} drivers={drivers} onTapPos={locked ? undefined : openPicker} />
 
-              {/* ── ONGLET RÉSULTAT ── */}
-              {activeTab === 'result' && (
-                <div className="space-y-5">
-                  {/* Podium officiel */}
-                  {currentRace.status === 'completed' && currentRace.result ? (
-                    <div>
-                      <p className="section-title">Podium officiel</p>
-                      <div className="space-y-2">
-                        {POSITIONS.map((pos, i) => {
-                          const driverName = currentRace.result[pos]
-                          const photoUrl   = getDriverPhoto(drivers, driverName)
-                          return (
-                            <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
-                              <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>{i + 1}</div>
-                              <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                                {photoUrl
-                                  ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                                  : <span>{driverName?.[0] ?? '?'}</span>
-                                }
-                              </div>
-                              <div className="flex-1">
-                                <p className="font-bold leading-tight">{driverName}</p>
-                                <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
-                              </div>
-                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getTeamColor(driverName) }} />
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 p-3 bg-surfaceHigh rounded-lg">
-                      <span className="text-muted text-sm">Course pas encore disputée</span>
+                  {switchRule && (
+                    <div className="mt-1.5 flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1 text-xs leading-snug">
+                      <AlertTriangle size={14} className="text-accent shrink-0 mt-[1px]" />
+                      {switchRule.kind === 'late' ? (
+                        <span>Qualifs passées : un premier pronostic coûte <b className="text-accent">-{switchRule.amount} pts</b></span>
+                      ) : (
+                        <span>
+                          Qualifs passées : <b className="text-accent">-{switchRule.amount} pts</b> à chaque validation<br />
+                          <span className="text-muted">d'un podium modifié, que tu changes 1 ou 3 pilotes</span>
+                        </span>
+                      )}
                     </div>
                   )}
-
-                  {/* Qualifications — strictly read-only here: fetching/
-                      writing this data requires super-admin (races/{id} write
-                      rule), so the trigger lives in ReglagesSuperAdmin.jsx,
-                      not this player-facing modal. */}
-                  <div>
-                    <p className="section-title mb-2">
-                      Qualifications {currentRace.qualifying?.year ?? new Date().getFullYear()}
+                  {!switchRule && !locked && myPred && modPenaltyRule && (
+                    <p className="mt-1.5 flex items-center gap-2 text-xs text-muted">
+                      <LockOpen size={14} className="text-green-400 shrink-0" />
+                      Modifiable gratuitement jusqu'aux qualifs
                     </p>
-                    {currentRace.qualifying ? (
-                      <div className="space-y-2">
-                        {POSITIONS.map((pos, i) => {
-                          const entry      = currentRace.qualifying[pos]
-                          const driverName = entry?.name
-                          const photoUrl   = getDriverPhoto(drivers, driverName)
-                          return (
-                            <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
-                              <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>{i + 1}</div>
-                              <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                                {photoUrl
-                                  ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                                  : <span>{driverName?.[0] ?? '?'}</span>
-                                }
-                              </div>
-                              <div className="flex-1">
-                                <p className="font-bold leading-tight">{driverName}</p>
-                                <p className="text-[10px] text-muted">{getDriverTeam(driverName)?.name}</p>
-                              </div>
-                              {entry?.lap_duration && (
-                                <span className="text-xs font-bold text-white">{entry.lap_duration}</span>
-                              )}
-                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getTeamColor(driverName) }} />
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted p-3">Qualifications pas encore disponibles</p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* ── ONGLET HISTORIQUE ── */}
-              {activeTab === 'history' && (
-                <div className="space-y-5">
-                  {/* Previous-season edition — label built from the stored
-                      `year` field, never a hardcoded year in the JSX */}
-                  {currentRace.firstEdition ? (
-                    <div className="flex items-center gap-2 p-3 bg-surfaceHigh rounded-lg">
-                      <span className="text-sm">🆕</span>
-                      <span className="text-sm text-muted">Première édition — pas de données {new Date().getFullYear() - 1}</span>
-                    </div>
-                  ) : raceHistory ? (
-                    <div className="space-y-4">
-                      {/* Podium */}
-                      {raceHistory.podium && (
-                        <div>
-                          <p className="section-title">GP {currentRace.name} {raceHistory.year}</p>
-                          <div className="space-y-2">
-                            {POSITIONS.map((pos, i) => {
-                              const entry = raceHistory.podium[pos]
-                              const photoUrl = getDriverPhoto(drivers, entry?.name)
-                              return (
-                                <div key={pos} className="flex items-center gap-3 p-3 card-elevated rounded-lg">
-                                  <div className={`position-badge text-bg font-black text-sm ${POS_BG[pos]}`}>{i + 1}</div>
-                                  <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                                    {photoUrl
-                                      ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                                      : <span>{entry?.name?.[0] ?? '?'}</span>
-                                    }
-                                  </div>
-                                  <div className="flex-1">
-                                    <p className="font-bold leading-tight">{entry?.name ?? '—'}</p>
-                                    <p className="text-[10px] text-muted">{entry?.team ?? ''}</p>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      {/* Pole */}
-                      {raceHistory.pole && (
-                        <div>
-                          <p className="section-title">Pole Position {raceHistory.year}</p>
-                          <div className="flex items-center gap-3 p-3 card-elevated rounded-lg">
-                            <span className="text-xl">🏁</span>
-                            <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                              {(() => {
-                                const photoUrl = getDriverPhoto(drivers, raceHistory.pole.name)
-                                return photoUrl
-                                  ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                                  : <span>{raceHistory.pole.name?.[0] ?? '?'}</span>
-                              })()}
-                            </div>
-                            <div className="flex-1">
-                              <p className="font-bold leading-tight">{raceHistory.pole.name}</p>
-                              <p className="text-[10px] text-muted">{raceHistory.pole.team}</p>
-                            </div>
-                            {raceHistory.pole.lap_duration && (
-                              <span className="text-xs font-bold text-white">
-                                {raceHistory.pole.lap_duration}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted p-3">Données historiques non disponibles</p>
                   )}
                 </div>
-              )}
-            </div>
+
+                <HistoryBlock history={raceHistory} firstEdition={currentRace.firstEdition} drivers={drivers} />
+              </>
+            )}
+
+            {/* ── Course terminée : podium officiel, joueurs, qualifs, historique ── */}
+            {mode === 'completed' && (
+              <>
+                <div className="px-5 pt-3">
+                  <p className="section-title !mb-2">Podium officiel</p>
+                  {currentRace.result ? (
+                    <PodiumCard values={currentRace.result} drivers={drivers} />
+                  ) : (
+                    <p className="text-sm text-muted rounded-xl border border-dashed border-border px-3 py-6 text-center">Résultat officiel à venir</p>
+                  )}
+                </div>
+
+                {currentRace.result && (
+                  <>
+                    <div className="mt-3 border-t border-border" />
+                    <PlayersTable
+                      rows={rows}
+                      meId={currentPlayerId}
+                      drivers={drivers}
+                      penalties={penalties}
+                      raceId={currentRace.id}
+                    />
+                  </>
+                )}
+
+                <QualifyingBlock qualifying={currentRace.qualifying} drivers={drivers} />
+                <HistoryBlock history={raceHistory} firstEdition={currentRace.firstEdition} drivers={drivers} />
+                <div className="h-4" />
               </>
             )}
           </div>
@@ -626,110 +427,19 @@ export default function PredictionSheet({
       </BottomSheet>
 
       {/* Driver picker sheet */}
-      <BottomSheet
+      <DriverPicker
         isOpen={driverPickerOpen}
         onClose={() => { setDriverPickerOpen(false); setActivePosition(null) }}
-        title={`Choisir ${activePosition === 'P1' ? 'P1 – Vainqueur' : activePosition === 'P2' ? 'P2 – 2e place' : 'P3 – 3e place'}`}
-        fullHeight
-      >
-        <div className="p-4 pb-10">
-          {/* Already-picked reminder */}
-          {POSITIONS.filter(p => p !== activePosition && draftPrediction[p]).map(pos => (
-            <div key={pos} className="mb-2 flex items-center gap-2 text-xs text-muted">
-              <span className={POS_COLOR[pos]}>{pos}:</span>
-              <span>{draftPrediction[pos]}</span>
-              <span>(déjà sélectionné)</span>
-            </div>
-          ))}
-
-          {drivers.length > 0 ? (
-            /* ── Compact list from Firebase ── */
-            groupDriversByTeam(drivers.filter(d => d.active !== false)).map(team => (
-              <div key={team.name} className="mb-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: team.colour }} />
-                  <span className="text-xs font-bold text-muted uppercase tracking-wide">{team.name}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-x-2">
-                  {team.drivers.map(driver => {
-                    const driverName = driver.display_name ?? driver.name_acronym ?? String(driver._id)
-                    const isCurrent  = draftPrediction[activePosition] === driverName
-                    const isSelected = !isCurrent && Object.values(draftPrediction).includes(driverName)
-                    const initials   = (driver.first_name?.[0] ?? '') + (driver.last_name?.[0] ?? '')
-                    return (
-                      <button
-                        key={driver._id}
-                        onClick={() => !isSelected && selectDriver(driverName)}
-                        style={isCurrent ? { borderLeftColor: team.colour, backgroundColor: team.colour + '1a' } : {}}
-                        className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg mb-1 transition-all active:scale-95 border-l-[3px] ${
-                          isCurrent  ? 'border-l-[3px]' :
-                          isSelected ? 'opacity-35 cursor-default border-l-transparent' :
-                          'border-l-transparent'
-                        }`}
-                      >
-                        {/* Avatar */}
-                        <div
-                          className="w-11 h-11 rounded-full overflow-hidden shrink-0 flex items-center justify-center text-xs font-bold text-white"
-                          style={{ backgroundColor: team.colour + '66' }}
-                        >
-                          {driver.headshot_url ? (
-                            <img
-                              src={driver.headshot_url}
-                              alt=""
-                              className="w-full h-full object-cover object-top"
-                            />
-                          ) : (
-                            <span>{initials || driver.name_acronym}</span>
-                          )}
-                        </div>
-                        {/* Name */}
-                        <span className="text-sm text-white font-medium truncate flex-1 text-left">
-                          {driver.last_name ?? driverName}
-                        </span>
-                        {/* Team dot */}
-                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: team.colour }} />
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            ))
-          ) : (
-            /* ── Fallback: hardcoded TEAMS list ── */
-            [...TEAMS].map(team => (
-              <div key={team.name} className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: team.color }} />
-                  <span className="text-xs font-bold text-muted uppercase tracking-wide">{team.name}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {team.drivers.map(driver => {
-                    const isSelected = Object.values(draftPrediction).includes(driver)
-                    const isCurrent  = draftPrediction[activePosition] === driver
-                    return (
-                      <button
-                        key={driver}
-                        onClick={() => selectDriver(driver)}
-                        className={`p-3 rounded-xl border text-left transition-all active:scale-95 ${
-                          isCurrent  ? 'border-accent bg-accent/20' :
-                          isSelected ? 'border-muted/30 bg-surfaceHigh/30 opacity-50' :
-                          'border-border bg-surfaceHigh'
-                        }`}
-                      >
-                        <p className="font-bold text-sm">{driver}</p>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: team.color }} />
-                          <p className="text-xs text-muted">{team.name}</p>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </BottomSheet>
+        position={activePosition}
+        draft={draftPrediction}
+        drivers={drivers}
+        races={races}
+        onChoose={choosePicked}
+        lastPodium={lastPodium}
+        previousPodium={previousPodium}
+        previousYear={raceHistory?.year}
+        raceFlag={currentRace?.flag}
+      />
 
       {/* Penalty confirmation — fixed z-50, above the BottomSheets (z-40) */}
       <ConfirmModal
