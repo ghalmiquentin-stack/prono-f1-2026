@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pencil, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { Pencil, Clock, ChevronDown, ChevronUp, Star } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useRaceTiming } from '../hooks/useRaceTiming'
 import { useQualifyingPhase } from '../hooks/useQualifyingPhase'
@@ -7,7 +7,8 @@ import { useCollection, useDocument, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getTeamColor } from '../data/drivers'
 import { getProfile } from '../utils/profiles'
-import { hasRaceStarted, formatRaceLocalTime, raceStartInstant } from '../utils/races'
+import { hasRaceStarted, formatRaceLocalTimeWithTz, raceStartInstant } from '../utils/races'
+import { formatLongDate, ordinal, rankOf } from '../utils/sheetStats'
 import { getModificationCount } from '../utils/predictions'
 import { summarizePenalties } from '../utils/penalties'
 import { getDriverPhoto } from '../utils/drivers'
@@ -16,6 +17,7 @@ import HeaderBadges from '../components/HeaderBadges'
 import PredictionSheet from '../components/PredictionSheet'
 import PredictionTimestamps, { formatPredTime } from '../components/PredictionTimestamps'
 import QualifyingPodium, { getQualifyingPodium } from '../components/QualifyingPodium'
+import CompactPodium from '../components/sheet/CompactPodium'
 import Skeleton, { SkeletonCard } from '../components/Skeleton'
 
 const PLAYER_COLORS_FALLBACK = {
@@ -213,6 +215,15 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
       }))
       .sort((a, b) => (b.raceScore?.net ?? -Infinity) - (a.raceScore?.net ?? -Infinity))
   }, [standings, lastRace])
+
+  // Rang du joueur sur le dernier GP (même règle que la feuille : classement par
+  // points nets, « ex æquo » si un autre joueur a le même score, total = tous les joueurs).
+  const myLastRank = useMemo(() => {
+    const rows = lastRaceRanking.map(p => ({ id: p.id, net: p.raceScore?.net ?? null }))
+    const me = rows.find(r => r.id === currentPlayerId)
+    if (!me || me.net == null) return null
+    return { rank: rankOf(rows, me.net), tied: rows.filter(r => r.net === me.net).length > 1, total: rows.length }
+  }, [lastRaceRanking, currentPlayerId])
 
   const myPrediction = useMemo(() => {
     if (!nextRace) return null
@@ -622,49 +633,26 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           <SkeletonCard />
         ) : lastRace?.result ? (
           <div className="card p-5">
-            <div className="flex items-center gap-3 mb-1">
-              <span className="text-3xl">{lastRace.flag}</span>
-              <div className="flex-1">
+            <div className="flex items-start gap-3">
+              <span className="text-3xl leading-none mt-0.5">{lastRace.flag}</span>
+              <div className="flex-1 min-w-0">
                 <span className="text-accent font-bold text-xs uppercase tracking-widest">Dernière course</span>
                 <h3 className="font-black text-base leading-tight">GP {lastRace.name}</h3>
                 <p className="text-xs text-muted">
-                  {new Date(lastRace.date + 'T00:00:00').toLocaleDateString('fr-FR', {
-                    weekday: 'long', day: 'numeric', month: 'long'
-                  })}
-                  {formatRaceLocalTime(lastRace) && (
-                    <> · <span className="text-white/70">{formatRaceLocalTime(lastRace)}</span></>
+                  {formatLongDate(lastRace.date)}
+                  {formatRaceLocalTimeWithTz(lastRace) && (
+                    <> · <span className="text-white/70">{formatRaceLocalTimeWithTz(lastRace)}</span></>
                   )}
                 </p>
               </div>
             </div>
 
-            {/* Podium officiel — version compacte, avec petite photo */}
-            <div className="grid grid-cols-3 gap-2 mt-4">
-              {POSITIONS.map((pos, i) => {
-                const driverName = lastRace.result[pos]
-                const photoUrl   = getDriverPhoto(drivers, driverName)
-                return (
-                  <div key={pos} className="flex flex-col items-center gap-1 p-2 card-elevated rounded-lg">
-                    <span className={`text-xs font-bold uppercase tracking-wide ${POS_COLOR[pos]}`}>
-                      {rankEmoji(i + 1)} {pos}
-                    </span>
-                    <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted">
-                      {photoUrl
-                        ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                        : <span>{driverName?.[0] ?? '?'}</span>
-                      }
-                    </div>
-                    <span className="text-sm font-bold text-center leading-tight truncate w-full">
-                      {driverName}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
+            {/* Podium officiel : version compacte (portrait, place, nom, écurie) */}
+            <CompactPodium result={lastRace.result} drivers={drivers} className="mt-4" />
 
             {/* Points marqués par chaque joueur de la ligue sur ce GP précis */}
             <div className="mt-4 pt-4 border-t border-border space-y-1.5">
-              <p className="text-[10px] text-muted uppercase tracking-wide font-bold mb-1">Points marqués sur ce GP</p>
+              <p className="text-[11px] text-muted uppercase tracking-wide font-bold mb-1">Points marqués sur ce GP</p>
               {limitListWithMe(lastRaceRanking, currentPlayerId).map((item, idx) => {
                 if (item.type === 'gap') return <GapSeparator key={`gap-${idx}`} count={item.count} />
                 const player = item.player
@@ -674,22 +662,30 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                 const avatar = String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
                 const displayName = String(identity?.displayName ?? player.id)
                 const rs = player.raceScore
+                const perfect = rs?.net != null && !!rs.perfectPodium
                 return (
                   <div
                     key={player.id}
-                    className={`flex items-center gap-2 p-2 rounded-lg ${isCurrent ? 'bg-surfaceHigh' : ''}`}
+                    className={`flex items-center gap-2 p-2 rounded-lg ${isCurrent ? 'bg-surfaceHigh' : ''} ${perfect ? 'border border-gold/60 bg-gold/[0.06]' : ''}`}
+                    style={perfect ? { boxShadow: '0 0 16px rgba(255,215,0,0.22)' } : undefined}
                   >
                     <span className="text-xl leading-none">{avatar}</span>
-                    <span className={`flex-1 font-bold text-sm truncate ${isCurrent ? 'text-white' : 'text-white/80'}`}>
-                      {displayName}
-                      {isCurrent && <span className="text-xs text-muted ml-1">(vous)</span>}
+                    <span className="flex-1 min-w-0 leading-tight">
+                      <span className={`block font-bold text-sm truncate ${isCurrent ? 'text-white' : 'text-white/80'}`}>{displayName}</span>
+                      {isCurrent && (
+                        <span className="block text-[11px] text-muted">
+                          vous{myLastRank && ` · ${ordinal(myLastRank.rank)} ${myLastRank.tied ? 'ex æquo' : `sur ${myLastRank.total}`}`}
+                        </span>
+                      )}
                     </span>
                     {rs?.net != null ? (
                       <div className="flex items-center gap-2 shrink-0">
                         {rs.penalty > 0 && (
                           <span className="text-xs text-accent font-bold">-{rs.penalty} pén.</span>
                         )}
-                        <span className="font-black text-sm" style={{ color }}>{rs.net} pts</span>
+                        <span className="flex items-center gap-0.5 font-black text-sm" style={{ color: perfect ? '#FFD700' : color }}>
+                          {perfect && <Star size={12} fill="#FFD700" />}{rs.net} pts
+                        </span>
                       </div>
                     ) : (
                       <span className="text-xs text-muted shrink-0">Pas de prono</span>
@@ -703,7 +699,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
               onClick={() => openRaceSheet(lastRace)}
               className="btn-primary w-full mt-4 text-sm"
             >
-              Voir le podium et les pronostics →
+              Voir tous les pronostics →
             </button>
           </div>
         ) : null}
