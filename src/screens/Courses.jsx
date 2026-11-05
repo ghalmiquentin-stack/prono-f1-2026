@@ -1,17 +1,18 @@
 import { useState, useMemo } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Lock } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useRaceTiming } from '../hooks/useRaceTiming'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateRaceScore, calculateAllSeasonScores } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
-import { withRoundNumbers, formatRaceLocalTimeWithTz } from '../utils/races'
+import { withRoundNumbers, formatRaceLocalTimeWithTz, raceStartInstant } from '../utils/races'
+import { circuitLabel, countdownParts, formatLongDate } from '../utils/sheetStats'
 import { getPenaltyAmount } from '../utils/penalties'
 import { getDriverPhoto } from '../utils/drivers'
 import PredictionSheet from '../components/PredictionSheet'
 import Skeleton from '../components/Skeleton'
 import HeaderBadges from '../components/HeaderBadges'
-import RaceHeader from '../components/sheet/RaceHeader'
+import CircuitTrack from '../components/CircuitTrack'
 import { useNowEvery } from '../hooks/useNowEvery'
 
 const POSITIONS = ['P1', 'P2', 'P3']
@@ -56,19 +57,64 @@ function NoPronoMark({ race }) {
     : <span className="text-accent font-bold text-xs animate-pulse">+ Prono</span>
 }
 
-// Corps de la grande carte « Prochain GP » : l'en-tête de la feuille de GP
-// (départ, compte à rebours, circuit, record) puis le podium du joueur s'il existe.
+// Corps de la grande carte « Prochain GP » : le départ (date, heure, compte à
+// rebours) et le circuit (tracé, nom), dans le style des encadrés de la feuille de
+// GP, puis le podium du joueur s'il existe. Les chiffres du circuit (distance,
+// tours, record) restent dans la feuille pour ne pas la doubler.
 // Composant à part pour que l'horloge d'affichage ne re-rende que cette carte.
 function NextRaceBody({ race, myPred, drivers }) {
   const { started } = useRaceTiming(race)
   const now = useNowEvery(30000)
+  const [time, ...tz] = (formatRaceLocalTimeWithTz(race) ?? '').split(' ')
+  const parts = started ? [] : countdownParts(raceStartInstant(race).getTime() - now)
+  const title = `GP ${race.name}`
   return (
     <>
-      <div className="pt-2">
-        <RaceHeader compact race={race} round={race.round} mode="upcoming" started={started} now={now} />
+      <div className="px-3 pt-3 pb-3">
+        <div className="flex items-center gap-2.5 min-h-[30px]">
+          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[13px] font-black shrink-0">{race.round}</div>
+          <span className="text-2xl leading-none shrink-0">{race.flag}</span>
+          <h2 className={`${title.length > 14 ? 'text-xl' : 'text-2xl'} font-black leading-tight min-w-0`}>{title}</h2>
+        </div>
+        <div className="mt-2 grid grid-cols-[1fr_126px] gap-2">
+          <div className="rounded-xl bg-bg/50 border border-border/70 flex flex-col overflow-hidden">
+            <div className="flex-1 px-3 pt-3 flex flex-col justify-start">
+              <p className="text-[13px] font-bold leading-tight whitespace-nowrap">{formatLongDate(race.date)}</p>
+              {time && (
+                <p className="leading-none mt-2">
+                  <span className="text-[36px] font-black">{time}</span>{' '}
+                  <span className="text-xs text-muted">{tz.join(' ')}</span>
+                </p>
+              )}
+            </div>
+            <div className="px-3 py-1.5 border-t border-border/60 h-[48px] flex flex-col justify-center">
+              {started ? (
+                <>
+                  <p className="text-[11px] text-muted leading-tight">Statut</p>
+                  <p className="flex items-center gap-1.5 text-[13px] font-black leading-tight"><Lock size={12} className="text-muted" />Départ donné</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] text-muted leading-tight">Départ dans</p>
+                  <div className="flex gap-1 mt-1">
+                    {parts.map(p => (
+                      <span key={p.unit} className="bg-surfaceHigh rounded-md px-1.5 py-px text-[13px] font-black tabular-nums leading-tight">
+                        {p.n}<span className="text-[11px] text-muted font-bold ml-0.5">{p.unit}</span>
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="rounded-xl bg-bg/50 border border-border/70 flex flex-col items-center justify-center px-2 py-2 text-center">
+            <CircuitTrack race={race} size={84} />
+            <p className="text-xs font-bold leading-tight mt-1 line-clamp-2">{circuitLabel(race)}</p>
+          </div>
+        </div>
       </div>
       {myPred && (
-        <div className="px-5 py-3 flex items-center gap-3">
+        <div className="px-5 pb-3 flex items-center gap-3">
           <span className="text-[11px] text-muted shrink-0">Ton podium</span>
           <PredictionPreview prediction={myPred.prediction} drivers={drivers} className="flex-wrap" />
         </div>

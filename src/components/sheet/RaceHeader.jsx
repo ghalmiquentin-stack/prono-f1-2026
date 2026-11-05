@@ -11,8 +11,7 @@ import { circuitLabel, countdownParts, formatKm, formatLongDate, ordinal } from 
 // mode : 'upcoming' | 'cancelled' | 'completed'
 // started : le départ du GP est passé (déjà calculé par la feuille avec useRaceTiming)
 // result : (completed) { none, net, raw, bonus, pen, perfect, rank, tied, total, color }
-// compact : version carte (Courses) : marges réduites, pas de filet en bas, colonne circuit plus étroite.
-export default function RaceHeader({ race, round, mode, started, now, result, compact = false }) {
+export default function RaceHeader({ race, round, mode, started, now, result }) {
   const facts = CIRCUIT_FACTS[race.name]
   const timeWithTz = mode === 'cancelled' ? null : formatRaceLocalTimeWithTz(race)
   const [time, ...tzRest] = (timeWithTz ?? '').split(' ')
@@ -22,7 +21,7 @@ export default function RaceHeader({ race, round, mode, started, now, result, co
   const title = `GP ${race.name}`
 
   return (
-    <div className={compact ? 'px-3 pb-3' : 'px-5 pt-1 pb-3 border-b border-border'}>
+    <div className="px-5 pt-1 pb-3 border-b border-border">
       <div className="flex items-center gap-2.5 min-h-[30px]">
         {round != null && (
           <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[13px] font-black shrink-0">{round}</div>
@@ -31,20 +30,20 @@ export default function RaceHeader({ race, round, mode, started, now, result, co
         <h2 className={`${title.length > 14 ? 'text-xl' : 'text-2xl'} font-black leading-tight min-w-0`}>{title}</h2>
       </div>
 
-      <div className={`mt-2 grid ${compact ? 'grid-cols-[1fr_146px]' : 'grid-cols-[1fr_164px]'} gap-2`}>
+      <div className="mt-2 grid grid-cols-[1fr_164px] gap-2">
         {/* Zone gauche */}
         <div className="rounded-xl bg-bg/50 border border-border/70 flex flex-col overflow-hidden">
           {mode === 'completed' ? (
             <CompletedLeft race={race} result={result} />
           ) : (
             <>
-              <div className="flex-1 px-3 pt-2.5 flex flex-col justify-center">
+              <div className="flex-1 px-3 pt-3 flex flex-col justify-start">
                 <p className={`text-[13px] font-bold leading-tight whitespace-nowrap ${mode === 'cancelled' ? 'line-through text-muted' : ''}`}>
                   {formatLongDate(race.date)}
                 </p>
                 {time && (
-                  <p className="leading-none mt-1.5">
-                    <span className="text-[32px] font-black">{time}</span>{' '}
+                  <p className="leading-none mt-2">
+                    <span className="text-[36px] font-black">{time}</span>{' '}
                     <span className="text-xs text-muted">{tzRest.join(' ')}</span>
                   </p>
                 )}
@@ -90,12 +89,11 @@ export default function RaceHeader({ race, round, mode, started, now, result, co
             )}
           </div>
           <div className="px-3 py-1.5 border-t border-border/60 h-[48px] flex flex-col justify-center text-center">
-            {/* Carte étroite : l'année passe dans l'intitulé pour que la ligne du record tienne */}
-            <p className="text-[11px] text-muted leading-tight">Record du tour{compact && facts?.record ? ` · ${facts.record.year}` : ''}</p>
+            <p className="text-[11px] text-muted leading-tight">Record du tour</p>
             {facts?.record ? (
               <p className="text-[12px] leading-tight whitespace-nowrap">
                 <span className="font-black tabular-nums">{facts.record.time}</span>{' '}
-                <span className="text-muted">· {facts.record.driver}{compact ? '' : ` ${facts.record.year}`}</span>
+                <span className="text-muted">· {facts.record.driver} {facts.record.year}</span>
               </p>
             ) : (
               <p className="text-[12px] leading-tight text-muted">—</p>

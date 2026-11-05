@@ -118,8 +118,12 @@ export default function PredictionSheet({
     }
     newPred[activePosition] = driver
     setDraftPrediction(newPred)
-    setDriverPickerOpen(false)
-    setActivePosition(null)
+    // Le choix reste ouvert : on passe à la prochaine place encore vide (si les
+    // trois sont remplies, on reste où on est). La feuille ne se ferme que par
+    // « Valider le podium » ou la croix ; les pilotes déjà choisis sont gardés.
+    const from = POSITIONS.indexOf(activePosition)
+    const next = [1, 2, 3].map(i => POSITIONS[(from + i) % POSITIONS.length]).find(pos => !newPred[pos])
+    if (next) setActivePosition(next)
   }
 
   const clearPosition = (pos) =>
@@ -130,11 +134,14 @@ export default function PredictionSheet({
     if (!activePosition) return
     if (draftPrediction[activePosition] === driver) {
       clearPosition(activePosition)
-      setDriverPickerOpen(false)
-      setActivePosition(null)
       return
     }
     selectDriver(driver)
+  }
+
+  const closePicker = () => {
+    setDriverPickerOpen(false)
+    setActivePosition(null)
   }
 
   const openPicker = (pos) => {
@@ -429,7 +436,9 @@ export default function PredictionSheet({
       {/* Driver picker sheet */}
       <DriverPicker
         isOpen={driverPickerOpen}
-        onClose={() => { setDriverPickerOpen(false); setActivePosition(null) }}
+        onClose={closePicker}
+        onValidate={closePicker}
+        onSelectPosition={setActivePosition}
         position={activePosition}
         draft={draftPrediction}
         drivers={drivers}

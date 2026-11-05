@@ -29,9 +29,10 @@ function metric(pos, c) {
 
 // Choix d'un pilote pour une place du podium. Le pilote est le cœur de l'écran ;
 // l'encart « Dans le rétro » (dernier podium du joueur, podium de l'an dernier)
-// n'est qu'un repère. Toucher le pilote déjà choisi le retire.
+// n'est qu'un repère. Toucher un pilote ne ferme pas la feuille : on enchaîne les
+// trois places, puis « Valider le podium ». Toucher le pilote déjà choisi le retire.
 export default function DriverPicker({
-  isOpen, onClose, position, draft, drivers, races, onChoose,
+  isOpen, onClose, onValidate, onSelectPosition, position, draft, drivers, races, onChoose,
   lastPodium, previousPodium, previousYear, raceFlag,
 }) {
   const list = drivers?.length ? drivers : staticDrivers()
@@ -58,7 +59,7 @@ export default function DriverPicker({
         {['P1', 'P2', 'P3'].map(p => {
           const d = draft[p]; const s = STEP[p]; const active = p === position
           return (
-            <div key={p} className={`rounded-xl border px-1.5 py-1.5 flex items-center gap-1.5 min-w-0 ${active ? 'bg-surfaceHigh' : 'bg-bg/50 border-border/70'}`} style={active ? { borderColor: s.color } : undefined}>
+            <button key={p} onClick={() => onSelectPosition?.(p)} aria-pressed={active} aria-label={`Passer à la place ${POS_SHORT[p]}`} className={`rounded-xl border px-1.5 py-1.5 flex items-center gap-1.5 min-w-0 text-left ${active ? 'bg-surfaceHigh' : 'bg-bg/50 border-border/70'}`} style={active ? { borderColor: s.color } : undefined}>
               {d
                 ? <Portrait drivers={list} name={d} className="w-6 h-6" />
                 : <div className="w-6 h-6 rounded-full border-2 border-dashed shrink-0" style={{ borderColor: s.color }} />}
@@ -66,15 +67,34 @@ export default function DriverPicker({
                 <span className="block text-[11px] font-bold" style={{ color: s.color }}>{POS_SHORT[p]}</span>
                 <span className={`block text-[11px] font-black truncate ${d ? '' : 'text-muted font-normal'}`}>{d ?? (active ? 'à choisir' : '—')}</span>
               </span>
-            </div>
+            </button>
           )
         })}
       </div>
     </div>
   )
 
+  // Pied fixe : « Valider le podium » ramène à la feuille (l'enregistrement,
+  // lui, reste le bouton de la feuille). Les choix déjà faits sont gardés.
+  const filled = ['P1', 'P2', 'P3'].filter(p => draft[p]).length
+  const footer = (
+    <div className="px-5 pt-2 pb-2">
+      <button
+        onClick={onValidate}
+        disabled={filled === 0}
+        className={`w-full py-3 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
+          filled === 3 ? 'bg-accent text-white shadow-glow-red'
+            : filled > 0 ? 'bg-surfaceHigh text-white'
+            : 'bg-surfaceHigh text-muted cursor-not-allowed'
+        }`}
+      >
+        {filled === 3 ? 'Valider le podium' : filled > 0 ? `Valider (${filled} sur 3)` : 'Choisis un pilote'}
+      </button>
+    </div>
+  )
+
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} bare fixedHeight header={header}>
+    <BottomSheet isOpen={isOpen} onClose={onClose} bare fixedHeight header={header} footer={footer}>
       <div className="pb-4">
         {aidRows.length > 0 && (
           <div className="px-5 pt-3">
