@@ -1,23 +1,22 @@
 import { useMemo, useState } from 'react'
-import { Pencil, Clock, ChevronDown, ChevronUp, Star } from 'lucide-react'
+import { Pencil, ChevronDown, ChevronUp, Star, Timer, AlertTriangle, RefreshCw } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useRaceTiming } from '../hooks/useRaceTiming'
 import { useQualifyingPhase } from '../hooks/useQualifyingPhase'
 import { useCollection, useDocument, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
-import { getTeamColor } from '../data/drivers'
 import { getProfile } from '../utils/profiles'
 import { hasRaceStarted, formatRaceLocalTimeWithTz, raceStartInstant } from '../utils/races'
-import { formatLongDate, ordinal, rankOf } from '../utils/sheetStats'
+import { driverCode, formatLongDate, ordinal, rankOf } from '../utils/sheetStats'
 import { getModificationCount } from '../utils/predictions'
 import { summarizePenalties } from '../utils/penalties'
-import { getDriverPhoto } from '../utils/drivers'
 import Countdown from '../components/Countdown'
 import HeaderBadges from '../components/HeaderBadges'
 import PredictionSheet from '../components/PredictionSheet'
-import PredictionTimestamps, { formatPredTime } from '../components/PredictionTimestamps'
+import PredictionTimestamps from '../components/PredictionTimestamps'
 import QualifyingPodium, { getQualifyingPodium } from '../components/QualifyingPodium'
 import CompactPodium from '../components/sheet/CompactPodium'
+import Portrait from '../components/sheet/Portrait'
 import Skeleton, { SkeletonCard } from '../components/Skeleton'
 
 const PLAYER_COLORS_FALLBACK = {
@@ -35,7 +34,11 @@ const PLAYER_AVATARS_FALLBACK = {
 }
 
 const POSITIONS = ['P1', 'P2', 'P3']
-const POS_COLOR = { P1: 'text-gold', P2: 'text-silver', P3: 'text-bronze' }
+const POS_HEX = { P1: '#FFD700', P2: '#C0C0C0', P3: '#CD7F32' }
+// Contour d'une place modifiée : bleu ciel = sans pénalité, rouge = pénalisée.
+const FREE_TONE = '#38BDF8'
+const PEN_TONE = '#E8002D'
+const ROW_COLS = 'grid grid-cols-[88px_1fr_1fr_1fr_24px] gap-1'
 
 // Dense ranking: two 🥈 → next is 🥉 (no gap)
 function rankWithTies(sorted) {
@@ -127,6 +130,8 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
   const [predictionSheetOpen, setPredictionSheetOpen] = useState(false)
   const [selectedRace, setSelectedRace] = useState(null)
   const [showAllOthers, setShowAllOthers] = useState(false)
+  // Lignes des autres joueurs dépliées dans la carte « Pronostics » (plusieurs possibles).
+  const [openRows, setOpenRows] = useState([])
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
   const { data: players, loading: playersLoading, error: playersError } = useCollection(user ? 'players' : null, leagueConstraint)
   const { data: profiles } = useCollection(user ? 'profiles' : null)
@@ -259,106 +264,182 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
   const canFoldOthers = hiddenOthers >= 2
   const visibleOthers = canFoldOthers && !showAllOthers ? otherPlayers.slice(0, OTHERS_PREVIEW) : otherPlayers
 
-  // Full prediction card for one player — unchanged from before; only used
-  // as-is when hiding is off, or for the current player's own card.
-  const renderPredictionCard = (player, { mine = false } = {}) => {
+  // Ce que la carte « Pronostics » sait d'un joueur pour le prochain GP : pronostic,
+  // nombre de modifications, places qui diffèrent du PREMIER podium (l'historique
+  // de chaque modification n'est pas conservé) et pénalités réelles de la ligue.
+  const describePrediction = (player) => {
+    const pred = predictions.find(p => p.playerId === player.id && p.raceId === nextRace.id)
+    if (!pred) return { pred: null }
+    const modCount = getModificationCount(pred)
+    const pens = summarizePenalties(penalties, player.id, nextRace.id)
+    const changed = POSITIONS.map(pos => modCount > 0 && !!pred.initialPrediction && pred.prediction?.[pos] !== pred.initialPrediction?.[pos])
+    return {
+      pred, modCount, pens, changed,
+      penalizedMod: pens.changeTotal > 0,
+      late: pens.lateTotal > 0,
+    }
+  }
+
+  // Lignes de pénalité en toutes lettres (montants réels, jamais théoriques).
+  const penaltyLines = (pens) => {
+    const lines = []
+    if (pens.lateTotal > 0) lines.push(`Pronostic tardif : -${pens.lateTotal} pts`)
+    if (pens.changeTotal > 0) {
+      lines.push(pens.changeCount > 1 ? `${pens.changeCount} modifications : -${pens.changeTotal} pts` : `Modification : -${pens.changeTotal} pts`)
+    }
+    return lines
+  }
+
+  // Détail d'un pronostic (heures, modifications, premier podium, pénalités).
+  const renderPredictionDetail = (player, d, { showFullNames = false } = {}) => (
+    <div className="space-y-1.5">
+      <PredictionTimestamps prediction={d.pred} penalties={penalties} playerId={player.id} raceId={nextRace.id} />
+      {d.modCount > 0 && (
+        <p className="text-xs text-muted pl-[16px]">
+          {d.changed.some(Boolean)
+            ? `Premier podium : ${POSITIONS.map(pos => (showFullNames ? d.pred.initialPrediction?.[pos] : driverCode(drivers, d.pred.initialPrediction?.[pos]))).join(' · ')}`
+            : 'Podium identique au premier'}
+        </p>
+      )}
+      {penaltyLines(d.pens).length > 0 && (
+        <div className="space-y-0.5">
+          {penaltyLines(d.pens).map(line => (
+            <p key={line} className="flex items-center gap-1.5 text-xs font-bold text-accent"><AlertTriangle size={12} className="shrink-0" />{line}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  // Ma fiche : podium en trois cases, crayon (tant que le GP n'a pas commencé,
+  // sauf déverrouillage admin), détail toujours visible.
+  const renderMyCard = (player) => {
     const identity = getProfile(profiles, player)
     const color = String(identity?.color ?? PLAYER_COLORS_FALLBACK[player.id] ?? '#fff')
     const avatar = String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
     const displayName = String(identity?.displayName ?? player.id)
-    const pred = predictions.find(p => p.playerId === player.id && p.raceId === nextRace.id)
-    const modCount = getModificationCount(pred)
-    // Edit button: only ever for the current player's own card, and only
-    // while the race hasn't started — unless the admin granted an
-    // exceptional manual unlock for this specific prediction.
-    const canEdit = mine && (!hasRaceStarted(nextRace) || pred?.manualUnlockOverride === true)
+    const d = describePrediction(player)
+    const canEdit = !hasRaceStarted(nextRace) || d.pred?.manualUnlockOverride === true
 
-    if (!pred) return (
-      <div key={player.id} className="card p-3 flex items-center gap-3">
+    if (!d.pred) return (
+      <div key={player.id} className="rounded-xl border border-border bg-surfaceHigh/40 p-3 flex items-center gap-3">
         <span className="text-xl leading-none">{avatar}</span>
-        <span className="font-bold text-sm flex-1" style={{ color }}>
-          {displayName}
-          {mine && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
+        <span className="flex-1 min-w-0 leading-tight">
+          <span className="block font-bold text-sm truncate" style={{ color }}>{displayName}</span>
+          <span className="block text-[11px] text-muted">vous</span>
         </span>
         {/* Une fois la course commencée, les pronostics sont verrouillés : même
             libellé que la carte « Dernière course » plutôt qu'une attente. */}
-        <span className="text-xs text-muted">
-          {raceStarted ? 'Pas de prono' : '⏳ En attente de prono...'}
-        </span>
+        <span className="text-xs text-muted">{raceStarted ? 'Pas de prono' : '⏳ En attente de prono...'}</span>
       </div>
     )
 
-    // Real, current penalties for this prediction (modifications + late
-    // submission) — not modificationCount or a theoretical count × configured
-    // amount, so an admin deletion is reflected immediately and the
-    // displayed label stays consistent with the displayed points.
-    const penaltySummary = summarizePenalties(penalties, player.id, nextRace.id)
-
+    const tone = d.penalizedMod ? PEN_TONE : FREE_TONE
     return (
-      <div key={player.id} className="card p-3">
-        <div className="flex items-center gap-2 mb-2">
+      <div key={player.id} className="rounded-xl border border-border bg-surfaceHigh/40 p-3">
+        <div className="flex items-center gap-2 mb-3">
           <span className="text-xl leading-none">{avatar}</span>
-          <span className="font-bold text-sm flex-1" style={{ color }}>
-            {displayName}
-            {mine && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
+          <span className="flex-1 min-w-0 leading-tight">
+            <span className="block font-bold text-sm truncate" style={{ color }}>{displayName}</span>
+            <span className="block text-[11px] text-muted">vous</span>
           </span>
-          {penaltySummary.label && (
-            <span className="text-xs text-red-400 font-bold text-right">
-              {penaltySummary.label}
-            </span>
-          )}
           {canEdit && (
             <button
               onClick={() => openRaceSheet(nextRace)}
-              className="relative p-1 rounded-lg text-muted hover:text-white transition-colors after:absolute after:-inset-[11px]"
+              className="w-11 h-11 -my-2 -mr-2 flex items-center justify-center rounded-lg text-muted hover:text-white transition-colors"
               aria-label="Modifier mon pronostic"
             >
-              <Pencil size={14} />
+              <Pencil size={16} />
             </button>
           )}
         </div>
         <div className="grid grid-cols-3 gap-2">
-          {POSITIONS.map(pos => {
-            const driverName = pred.prediction?.[pos]
-            const photoUrl   = getDriverPhoto(drivers, driverName)
-            const teamColor  = getTeamColor(driverName)
-            const isModified = modCount > 0 && pred.prediction?.[pos] !== pred.initialPrediction?.[pos]
+          {POSITIONS.map((pos, i) => {
+            const driverName = d.pred.prediction?.[pos]
             return (
-              <div key={pos} className="rounded-lg overflow-hidden border border-border bg-surfaceHigh/50">
-                <div className="h-1" style={{ backgroundColor: teamColor ?? '#6B6B8A' }} />
-                <div className="p-2 flex flex-col items-center gap-1">
-                  <div className={`text-[9px] font-bold ${POS_COLOR[pos]}`}>{pos}</div>
-                  <div className="w-11 h-11 rounded-full overflow-hidden bg-surfaceHigh flex items-center justify-center text-xs font-bold text-muted shrink-0">
-                    {photoUrl
-                      ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                      : <span>{driverName?.[0] ?? '?'}</span>
-                    }
-                  </div>
-                  <div className="text-[10px] font-bold truncate w-full text-center leading-tight">{driverName}</div>
-                  {isModified && (
-                    <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{ color: '#E8002D', backgroundColor: '#E8002D22' }}>Modifié</span>
-                  )}
-                </div>
+              <div
+                key={pos}
+                className="relative rounded-lg border bg-surface/60 py-2 flex flex-col items-center gap-1 min-w-0"
+                style={{ borderColor: d.changed[i] ? tone : '#2E2E42' }}
+              >
+                <span className="text-[11px] font-black" style={{ color: POS_HEX[pos] }}>{i + 1}</span>
+                <Portrait drivers={drivers} name={driverName} className="w-10 h-10" />
+                <span className="text-[11px] font-bold truncate w-full text-center">{driverName}</span>
+                {d.changed[i] && (
+                  <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center text-bg" style={{ background: tone }} aria-label="Place modifiée">
+                    <RefreshCw size={11} />
+                  </span>
+                )}
               </div>
             )
           })}
         </div>
-        {raceStarted ? (
-          // Après le départ : horodatages visibles de tous (lignes serveur
-          // prioritaires s'il y a une pénalité automatique).
-          <PredictionTimestamps
-            prediction={pred}
-            penalties={penalties}
-            playerId={player.id}
-            raceId={nextRace.id}
-            className="mt-2"
-          />
-        ) : pred.submittedAt && (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1 text-xs text-muted">
-              <Clock size={12} />
-              Soumis le {formatPredTime(pred.submittedAt)}
-            </span>
+        <div className="mt-2.5">{renderPredictionDetail(player, d, { showFullNames: true })}</div>
+      </div>
+    )
+  }
+
+  // Un autre joueur : une ligne (avatar, nom, trois cases, chrono si pronostic
+  // tardif pénalisé) ; toucher la ligne déplie le détail.
+  const renderOtherRow = (player) => {
+    const identity = getProfile(profiles, player)
+    const avatar = String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
+    const displayName = String(identity?.displayName ?? player.id)
+    const d = describePrediction(player)
+
+    // Pronostics masqués par la ligue : seulement « verrouillé » ou « en attente ».
+    if (hidePredictionsActive) {
+      return (
+        <div key={player.id} className={`${ROW_COLS} items-center px-1 py-1.5 min-h-[44px]`}>
+          <span className="flex items-center gap-1.5 min-w-0"><span className="text-xl leading-none">{avatar}</span><span className="font-bold text-sm truncate text-white/80">{displayName}</span></span>
+          {d.pred
+            ? <span className="col-span-3 text-center text-xs text-green-400 font-bold">🔒 Verrouillé</span>
+            : <span className="col-span-3 text-center text-xs text-muted font-bold">⏳ En attente</span>}
+          <span />
+        </div>
+      )
+    }
+    if (!d.pred) {
+      return (
+        <div key={player.id} className={`${ROW_COLS} items-center px-1 py-1.5 min-h-[44px]`}>
+          <span className="flex items-center gap-1.5 min-w-0"><span className="text-xl leading-none">{avatar}</span><span className="font-bold text-sm truncate text-white/80">{displayName}</span></span>
+          <span className="col-span-3 text-center text-xs text-muted italic">{raceStarted ? 'Pas de prono' : '⏳ En attente de prono...'}</span>
+          <span />
+        </div>
+      )
+    }
+
+    const tone = d.penalizedMod ? PEN_TONE : FREE_TONE
+    const open = openRows.includes(player.id)
+    return (
+      <div key={player.id} className="rounded-lg">
+        <button
+          onClick={() => setOpenRows(rows => (rows.includes(player.id) ? rows.filter(id => id !== player.id) : [...rows, player.id]))}
+          aria-expanded={open}
+          className={`w-full ${ROW_COLS} items-center px-1 py-1.5 min-h-[44px] text-left`}
+        >
+          <span className="flex items-center gap-1.5 min-w-0">
+            <span className="text-xl leading-none">{avatar}</span>
+            <span className="font-bold text-sm truncate text-white/80">{displayName}</span>
+          </span>
+          {POSITIONS.map((pos, i) => (
+            <div
+              key={pos}
+              className="border rounded-lg py-[3px] px-1 flex items-center justify-center gap-[3px] min-w-0 bg-surfaceHigh/50"
+              style={{ borderColor: d.changed[i] ? tone : '#2E2E42' }}
+            >
+              <Portrait drivers={drivers} name={d.pred.prediction?.[pos]} className="w-5 h-5" />
+              <span className="text-[11px] font-semibold tracking-wide leading-none text-white/90">{driverCode(drivers, d.pred.prediction?.[pos])}</span>
+            </div>
+          ))}
+          <span className="flex justify-end">
+            {d.late && <Timer size={15} className="text-accent" aria-label="Pronostic tardif, pénalité appliquée" />}
+          </span>
+        </button>
+        {open && (
+          <div className="mx-1 mb-1.5 rounded-lg bg-bg/40 border border-border/60 px-2 py-2 space-y-1.5">
+            <p className="text-sm font-bold flex items-center gap-1.5 min-w-0"><span className="text-lg leading-none">{avatar}</span><span className="truncate">{displayName}</span></p>
+            {renderPredictionDetail(player, d)}
           </div>
         )}
       </div>
@@ -583,46 +664,46 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           ) : (
             <div className="card p-5">
               <div className="flex items-center justify-between mb-3">
-                <span className="section-title">Pronostics — GP {nextRace.name} 🏁</span>
+                <span className="section-title !mb-0">Pronostics — GP {nextRace.name}</span>
               </div>
-              <div className="space-y-3">
-                {(() => {
-                  const me = standings.find(p => p.id === currentPlayerId)
-                  return me ? renderPredictionCard(me, { mine: true }) : null
-                })()}
-                <div className="pt-2 mt-1 border-t border-border">
-                  <p className="text-[10px] text-muted uppercase tracking-wide font-bold mb-2">Les autres joueurs</p>
-                </div>
-                {visibleOthers.map(player => {
-                  if (!hidePredictionsActive) return renderPredictionCard(player)
-
-                  const identity = getProfile(profiles, player)
-                  const avatar = String(identity?.avatar ?? PLAYER_AVATARS_FALLBACK[player.id] ?? '🏎️')
-                  const displayName = String(identity?.displayName ?? player.id)
-                  const hasSubmitted = predictions.some(p => p.playerId === player.id && p.raceId === nextRace.id)
-                  return (
-                    <div key={player.id} className="card p-3 flex items-center gap-3">
-                      <span className="text-xl leading-none">{avatar}</span>
-                      <span className="font-bold text-sm flex-1">{displayName}</span>
-                      {hasSubmitted ? (
-                        <span className="text-xs text-green-400 font-bold">🔒 Verrouillé</span>
-                      ) : (
-                        <span className="text-xs text-muted font-bold">⏳ En attente</span>
-                      )}
-                    </div>
-                  )
-                })}
+              {(() => {
+                const me = standings.find(p => p.id === currentPlayerId)
+                return me ? renderMyCard(me) : null
+              })()}
+              <div className="pt-3 mt-3 border-t border-border">
+                <p className="text-[11px] text-muted uppercase tracking-wide font-bold mb-1">Les autres joueurs</p>
+                {!hidePredictionsActive && (
+                  <div className={`${ROW_COLS} px-1 pb-1 text-[11px] font-bold tracking-widest uppercase text-muted`}>
+                    <span /><span className="text-center">P1</span><span className="text-center">P2</span><span className="text-center">P3</span><span />
+                  </div>
+                )}
+                {visibleOthers.map(player => renderOtherRow(player))}
                 {canFoldOthers && (
                   <button
                     type="button"
                     onClick={() => setShowAllOthers(v => !v)}
                     aria-expanded={showAllOthers}
-                    className="w-full min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl border border-border bg-surfaceHigh text-[13px] font-bold active:scale-95 transition-transform"
+                    className="mt-2 w-full min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl border border-border bg-surfaceHigh text-[13px] font-bold active:scale-95 transition-transform"
                   >
                     {showAllOthers ? 'Réduire la liste' : `Voir les ${hiddenOthers} autres joueurs`}
                     {showAllOthers ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   </button>
                 )}
+                {/* Légende : seulement ce qui est réellement affiché dans la carte. */}
+                {(() => {
+                  const shown = [...(standings.find(p => p.id === currentPlayerId) ? [standings.find(p => p.id === currentPlayerId)] : []), ...(hidePredictionsActive ? [] : visibleOthers)].map(describePrediction)
+                  const hasFree = shown.some(x => x.pred && x.changed.some(Boolean) && !x.penalizedMod)
+                  const hasPen = shown.some(x => x.pred && x.changed.some(Boolean) && x.penalizedMod)
+                  const hasLate = shown.some(x => x.pred && x.late)
+                  if (!hasFree && !hasPen && !hasLate) return null
+                  return (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+                      {hasFree && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded border" style={{ borderColor: FREE_TONE }} />Modifiée, sans pénalité</span>}
+                      {hasPen && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded border" style={{ borderColor: PEN_TONE }} />Modifiée, pénalisée</span>}
+                      {hasLate && <span className="flex items-center gap-1"><Timer size={13} className="text-accent" />Pronostic tardif</span>}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           )
