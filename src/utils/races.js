@@ -22,6 +22,19 @@ export function formatRaceLocalTime(race) {
   })
 }
 
+// Same hour as formatRaceLocalTime, followed by the viewer's own timezone
+// abbreviation ("18:00 GMT+1"), in the same style as the Accueil session
+// titles. Kept separate from formatRaceLocalTime so the screens that already
+// use the bare hour (Accueil last-race line, PredictionSheet) are unchanged.
+export function formatRaceLocalTimeWithTz(race) {
+  const time = formatRaceLocalTime(race)
+  if (!time) return null
+  const tz = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
+    .formatToParts(raceStartInstant(race))
+    .find(p => p.type === 'timeZoneName')?.value ?? ''
+  return `${time} ${tz}`.trim()
+}
+
 // Display-only round number, decoupled from the technical `id` (which stays
 // a stable key referenced by predictions/penalties and never changes — e.g.
 // a race inserted between two rounds can get a fractional id like 17.5 so

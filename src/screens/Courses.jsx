@@ -4,7 +4,7 @@ import { useRaceTiming } from '../hooks/useRaceTiming'
 import { useCollection, where } from '../hooks/useFirestore'
 import { calculateRaceScore, calculateAllSeasonScores } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
-import { withRoundNumbers, formatRaceLocalTime } from '../utils/races'
+import { withRoundNumbers, formatRaceLocalTimeWithTz } from '../utils/races'
 import { getPenaltyAmount } from '../utils/penalties'
 import { getDriverPhoto } from '../utils/drivers'
 import PredictionSheet from '../components/PredictionSheet'
@@ -132,7 +132,8 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              aria-pressed={filter === f.id}
+              className={`flex-1 min-h-[44px] rounded-lg text-sm font-bold transition-all ${
                 filter === f.id ? 'bg-accent text-white' : 'text-muted'
               }`}
             >
@@ -179,19 +180,19 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                       <span className="text-xl leading-none">{race.flag}</span>
                       <span className="font-bold text-sm truncate">GP {race.name}</span>
                       {isCancelled ? (
-                        <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-bold shrink-0">
+                        <span className="text-[11px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-bold shrink-0">
                           Annulé
                         </span>
                       ) : isCompleted && (
-                        <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-bold shrink-0">
+                        <span className="text-[11px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-bold shrink-0">
                           ✓ Terminé
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-muted mt-0.5">
                       {race.city} · {formatDate(race.date)}
-                      {formatRaceLocalTime(race) && (
-                        <> · <span className="text-white/70">{formatRaceLocalTime(race)}</span></>
+                      {formatRaceLocalTimeWithTz(race) && (
+                        <> · <span className="text-white/70">{formatRaceLocalTimeWithTz(race)}</span></>
                       )}
                     </p>
                   </div>
@@ -207,7 +208,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                             {myScoreData.net} pts
                           </span>
                           {myScoreData.penTotal > 0 && (
-                            <span className="text-[10px] text-accent font-bold">-{myScoreData.penTotal} pén.</span>
+                            <span className="text-[11px] text-accent font-bold">-{myScoreData.penTotal} pén.</span>
                           )}
                         </>
                       ) : (
@@ -233,12 +234,12 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                       const photoUrl = getDriverPhoto(firestoreDrivers, real)
                       return (
                         <div key={pos} className="flex items-center gap-2">
-                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black text-bg shrink-0 ${
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-black text-bg shrink-0 ${
                             i === 0 ? 'bg-gold' : i === 1 ? 'bg-silver' : 'bg-bronze'
                           }`}>
                             {i + 1}
                           </div>
-                          <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-[9px] font-bold text-muted">
+                          <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-[11px] font-bold text-muted">
                             {photoUrl
                               ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
                               : <span>{real?.[0] ?? '?'}</span>
@@ -251,7 +252,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                               <span className="text-sm leading-none">{detailIcon(detail)}</span>
                             </>
                           ) : (
-                            <span className="text-xs text-muted/50">pas de prono</span>
+                            <span className="text-xs text-muted">pas de prono</span>
                           )}
                         </div>
                       )
@@ -267,13 +268,13 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                       const photoUrl   = getDriverPhoto(firestoreDrivers, driverName)
                       return (
                         <div key={pos} className="flex items-center gap-1">
-                          <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-[8px] font-bold text-muted">
+                          <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-[11px] font-bold text-muted">
                             {photoUrl
                               ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
                               : <span>{driverName?.[0] ?? '?'}</span>
                             }
                           </div>
-                          <span className={`text-[10px] font-bold ${POS_COLOR[pos]}`}>{driverName}</span>
+                          <span className={`text-[11px] font-bold ${POS_COLOR[pos]}`}>{driverName}</span>
                         </div>
                       )
                     })}
