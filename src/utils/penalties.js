@@ -32,3 +32,18 @@ export function summarizePenalties(penalties, playerId, raceId) {
 
   return { changeCount: changes.length, lateCount: lates.length, changeTotal, lateTotal, total, label }
 }
+
+// Lignes de pénalité en toutes lettres (montants réels déjà enregistrés), à partir
+// de summarizePenalties : « Pronostic tardif : -5 pts », « Modification : -2 pts »,
+// « 2 modifications : -4 pts ». Partagé par l'Accueil et la feuille de GP terminé
+// pour que le type de pénalité (tardif ou modification) soit toujours nommé.
+export function penaltyLines(pens) {
+  const lines = []
+  if (pens.lateTotal > 0) {
+    lines.push(pens.lateCount > 1 ? `${pens.lateCount} pronostics tardifs : -${pens.lateTotal} pts` : `Pronostic tardif : -${pens.lateTotal} pts`)
+  }
+  if (pens.changeTotal > 0) {
+    lines.push(pens.changeCount > 1 ? `${pens.changeCount} modifications : -${pens.changeTotal} pts` : `Modification : -${pens.changeTotal} pts`)
+  }
+  return lines
+}

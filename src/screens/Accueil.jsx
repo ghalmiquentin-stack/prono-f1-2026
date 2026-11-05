@@ -9,12 +9,12 @@ import { getProfile } from '../utils/profiles'
 import { hasRaceStarted, formatRaceLocalTimeWithTz, raceStartInstant, withRoundNumbers } from '../utils/races'
 import { circuitLabel, countdownParts, driverCode, formatLongDate, ordinal, rankOf } from '../utils/sheetStats'
 import { getModificationCount } from '../utils/predictions'
-import { summarizePenalties } from '../utils/penalties'
+import { summarizePenalties, penaltyLines } from '../utils/penalties'
 import Countdown from '../components/Countdown'
 import HeaderBadges from '../components/HeaderBadges'
 import PredictionSheet from '../components/PredictionSheet'
 import PredictionTimestamps from '../components/PredictionTimestamps'
-import { getQualifyingPodium } from '../components/QualifyingPodium'
+import { getQualifyingPodium } from '../utils/qualifyingPodium'
 import CircuitTrack from '../components/CircuitTrack'
 import { useNowEvery } from '../hooks/useNowEvery'
 import CompactPodium from '../components/sheet/CompactPodium'
@@ -309,16 +309,6 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
       penalizedMod: pens.changeTotal > 0,
       late: pens.lateTotal > 0,
     }
-  }
-
-  // Lignes de pénalité en toutes lettres (montants réels, jamais théoriques).
-  const penaltyLines = (pens) => {
-    const lines = []
-    if (pens.lateTotal > 0) lines.push(`Pronostic tardif : -${pens.lateTotal} pts`)
-    if (pens.changeTotal > 0) {
-      lines.push(pens.changeCount > 1 ? `${pens.changeCount} modifications : -${pens.changeTotal} pts` : `Modification : -${pens.changeTotal} pts`)
-    }
-    return lines
   }
 
   // Détail d'un pronostic (heures, modifications, premier podium, pénalités).
@@ -664,14 +654,16 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
                       {rankEmoji(player.rank)}
                     </span>
                     <span className="text-xl leading-none">{avatar}</span>
-                    <span className={`flex-1 font-bold text-sm truncate ${isCurrent ? 'text-white' : 'text-white/80'}`}>
-                      {String(identity?.displayName ?? player.id)}
-                      {isCurrent && <span className="text-xs text-muted ml-1">(vous)</span>}
-                      {player.active === false && (
-                        <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full">
-                          Parti
-                        </span>
-                      )}
+                    <span className="flex-1 min-w-0 leading-tight">
+                      <span className={`block font-bold text-sm truncate ${isCurrent ? 'text-white' : 'text-white/80'}`}>
+                        {String(identity?.displayName ?? player.id)}
+                        {player.active === false && (
+                          <span className="ml-1.5 text-[11px] font-bold uppercase tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full">
+                            Parti
+                          </span>
+                        )}
+                      </span>
+                      {isCurrent && <span className="block text-[11px] text-muted">vous</span>}
                     </span>
                     <span className="font-black text-sm" style={{ color }}>
                       {player.total} pts

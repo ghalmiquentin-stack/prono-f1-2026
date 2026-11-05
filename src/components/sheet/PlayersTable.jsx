@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Star } from 'lucide-react'
+import { Star, AlertTriangle } from 'lucide-react'
 import Portrait from './Portrait'
 import PredictionTimestamps from '../PredictionTimestamps'
 import { driverCode, limitListWithMe } from '../../utils/sheetStats'
+import { summarizePenalties, penaltyLines } from '../../utils/penalties'
 
 const CELL = {
   exact: 'border-green-500/70 bg-green-500/10',
@@ -95,6 +96,9 @@ export default function PlayersTable({ rows, meId, drivers, penalties, raceId })
                     <span />
                   </div>
                   <PredictionTimestamps prediction={pl.pred} penalties={penalties} playerId={pl.id} raceId={raceId} />
+                  {penaltyLines(summarizePenalties(penalties, pl.id, raceId)).map(line => (
+                    <p key={line} className="flex items-center gap-1.5 text-xs font-bold text-accent"><AlertTriangle size={12} className="shrink-0" />{line}</p>
+                  ))}
                   <div className="flex items-center justify-between rounded-md bg-surfaceHigh/70 px-2 py-1.5 text-xs">
                     <span><span className="text-muted">Pronostic </span><span className="font-black text-green-400">{pl.raw}</span></span>
                     {pl.perfect && <span><span className="text-muted">Bonus </span><span className="font-black text-gold">+{pl.bonus}</span></span>}

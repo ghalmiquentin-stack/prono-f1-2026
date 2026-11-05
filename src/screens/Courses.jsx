@@ -426,7 +426,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                       onClick={() => openRaceSheet(race)}
                       className="btn-primary w-full mt-3 text-sm"
                     >
-                      Voir la feuille complète →
+                      Voir tous les pronostics →
                     </button>
                   </div>
                 )}
