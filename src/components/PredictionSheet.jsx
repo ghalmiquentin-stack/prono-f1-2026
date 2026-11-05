@@ -328,7 +328,7 @@ export default function PredictionSheet({
         isOpen={isOpen}
         onClose={handleClose}
         bare
-        fixedHeight
+        fullHeight
         footer={footer}
       >
         {race && currentRace && (

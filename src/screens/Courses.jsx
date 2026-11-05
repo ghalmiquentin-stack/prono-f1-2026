@@ -11,7 +11,8 @@ import { getDriverPhoto } from '../utils/drivers'
 import PredictionSheet from '../components/PredictionSheet'
 import Skeleton from '../components/Skeleton'
 import HeaderBadges from '../components/HeaderBadges'
-import CircuitTrack from '../components/CircuitTrack'
+import RaceHeader from '../components/sheet/RaceHeader'
+import { useNowEvery } from '../hooks/useNowEvery'
 
 const POSITIONS = ['P1', 'P2', 'P3']
 const POS_COLOR = { P1: 'text-gold', P2: 'text-silver', P3: 'text-bronze' }
@@ -20,14 +21,6 @@ function formatDate(dateStr) {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('fr-FR', {
     day: 'numeric', month: 'short'
   })
-}
-
-// "Dimanche 8 novembre"
-function formatLongDate(dateStr) {
-  const text = new Date(dateStr + 'T00:00:00').toLocaleDateString('fr-FR', {
-    weekday: 'long', day: 'numeric', month: 'long'
-  })
-  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 // Player's three picks for an upcoming race (photo + name per podium step).
@@ -61,6 +54,27 @@ function NoPronoMark({ race }) {
   return started
     ? <span className="text-muted font-bold text-xs">Verrouillé</span>
     : <span className="text-accent font-bold text-xs animate-pulse">+ Prono</span>
+}
+
+// Corps de la grande carte « Prochain GP » : l'en-tête de la feuille de GP
+// (départ, compte à rebours, circuit, record) puis le podium du joueur s'il existe.
+// Composant à part pour que l'horloge d'affichage ne re-rende que cette carte.
+function NextRaceBody({ race, myPred, drivers }) {
+  const { started } = useRaceTiming(race)
+  const now = useNowEvery(30000)
+  return (
+    <>
+      <div className="pt-2">
+        <RaceHeader compact race={race} round={race.round} mode="upcoming" started={started} now={now} />
+      </div>
+      {myPred && (
+        <div className="px-5 py-3 flex items-center gap-3">
+          <span className="text-[11px] text-muted shrink-0">Ton podium</span>
+          <PredictionPreview prediction={myPred.prediction} drivers={drivers} className="flex-wrap" />
+        </div>
+      )}
+    </>
+  )
 }
 
 function detailIcon(detail) {
@@ -225,28 +239,9 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                     </div>
                     <button
                       onClick={() => openRaceSheet(race)}
-                      className="w-full p-4 text-left grid grid-cols-[minmax(0,1fr)_108px] gap-3 items-center active:opacity-90"
+                      className="w-full text-left active:opacity-90"
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[13px] font-black shrink-0">
-                            {race.round}
-                          </div>
-                          <span className="w-8 h-8 flex items-center justify-center text-[26px] leading-none shrink-0">{race.flag}</span>
-                          <div className="min-w-0">
-                            <p className="text-lg font-bold leading-tight">GP {race.name}</p>
-                            <p className="text-xs text-muted">{race.city}</p>
-                          </div>
-                        </div>
-                        <div className="mt-3 pt-3 border-t border-border/60 text-xs text-muted">
-                          <p className="text-white/75">{formatLongDate(race.date)}</p>
-                          {timeLabel && <p>Course à {timeLabel}</p>}
-                        </div>
-                        {myPred && (
-                          <PredictionPreview prediction={myPred.prediction} drivers={firestoreDrivers} className="mt-3 flex-wrap" />
-                        )}
-                      </div>
-                      <CircuitTrack race={race} />
+                      <NextRaceBody race={race} myPred={myPred} drivers={firestoreDrivers} />
                     </button>
                   </div>
                   {filteredRaces.length > 1 && (
