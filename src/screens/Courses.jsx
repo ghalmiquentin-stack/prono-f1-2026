@@ -11,6 +11,7 @@ import { getDriverPhoto } from '../utils/drivers'
 import PredictionSheet from '../components/PredictionSheet'
 import Skeleton from '../components/Skeleton'
 import HeaderBadges from '../components/HeaderBadges'
+import CircuitTrack from '../components/CircuitTrack'
 
 const POSITIONS = ['P1', 'P2', 'P3']
 const POS_COLOR = { P1: 'text-gold', P2: 'text-silver', P3: 'text-bronze' }
@@ -19,6 +20,37 @@ function formatDate(dateStr) {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('fr-FR', {
     day: 'numeric', month: 'short'
   })
+}
+
+// "Dimanche 8 novembre"
+function formatLongDate(dateStr) {
+  const text = new Date(dateStr + 'T00:00:00').toLocaleDateString('fr-FR', {
+    weekday: 'long', day: 'numeric', month: 'long'
+  })
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+// Player's three picks for an upcoming race (photo + name per podium step).
+function PredictionPreview({ prediction, drivers, className = '' }) {
+  return (
+    <div className={`flex items-center gap-3 ${className}`}>
+      {POSITIONS.map(pos => {
+        const driverName = prediction?.[pos]
+        const photoUrl   = getDriverPhoto(drivers, driverName)
+        return (
+          <div key={pos} className="flex items-center gap-1">
+            <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-[11px] font-bold text-muted">
+              {photoUrl
+                ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
+                : <span>{driverName?.[0] ?? '?'}</span>
+              }
+            </div>
+            <span className={`text-[11px] font-bold ${POS_COLOR[pos]}`}>{driverName}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 // "+ Prono" call-to-action for an upcoming race the player hasn't predicted,
@@ -70,6 +102,9 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
     }
     return sortedRaces
   }, [sortedRaces, filter])
+
+  // First race of the "À venir" list = the next GP, shown as a larger card.
+  const nextRaceId = filter === 'upcoming' ? (filteredRaces[0]?.id ?? null) : null
 
   // The latest finished GP is unfolded when the Terminées tab is opened.
   const latestCompletedId = useMemo(
@@ -178,6 +213,49 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
             // minimal (the sheet still shows it).
             const timeLabel = isCompleted ? null : formatRaceLocalTimeWithTz(race)
 
+            if (race.id === nextRaceId) {
+              return (
+                <div key={race.id} className="space-y-3">
+                  <div className="card overflow-hidden">
+                    <div className="flex items-center justify-between bg-surfaceHigh px-4 min-h-[40px]">
+                      <span className="text-[11px] font-bold tracking-widest uppercase">Prochain GP</span>
+                      {myPred
+                        ? <span className="text-green-400 font-bold text-xs">✓ Soumis</span>
+                        : <NoPronoMark race={race} />}
+                    </div>
+                    <button
+                      onClick={() => openRaceSheet(race)}
+                      className="w-full p-4 text-left grid grid-cols-[minmax(0,1fr)_108px] gap-3 items-center active:opacity-90"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[13px] font-black shrink-0">
+                            {race.round}
+                          </div>
+                          <span className="w-8 h-8 flex items-center justify-center text-[26px] leading-none shrink-0">{race.flag}</span>
+                          <div className="min-w-0">
+                            <p className="text-lg font-bold leading-tight">GP {race.name}</p>
+                            <p className="text-xs text-muted">{race.city}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-border/60 text-xs text-muted">
+                          <p className="text-white/75">{formatLongDate(race.date)}</p>
+                          {timeLabel && <p>Course à {timeLabel}</p>}
+                        </div>
+                        {myPred && (
+                          <PredictionPreview prediction={myPred.prediction} drivers={firestoreDrivers} className="mt-3 flex-wrap" />
+                        )}
+                      </div>
+                      <CircuitTrack race={race} />
+                    </button>
+                  </div>
+                  {filteredRaces.length > 1 && (
+                    <p className="text-[11px] font-bold tracking-widest uppercase text-muted pt-2">Ensuite</p>
+                  )}
+                </div>
+              )
+            }
+
             return (
               <div key={race.id} className="card">
                 <button
@@ -193,7 +271,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                         ? 'bg-red-500/20 text-red-400'
                         : isCompleted
                         ? 'bg-green-500/20 text-green-400'
-                        : 'bg-accent/20 text-accent'
+                        : 'bg-white/10 text-white'
                     }`}>
                       {race.round}
                     </div>
@@ -253,23 +331,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
 
                   {/* ── Upcoming: prediction preview ── */}
                   {!isCompleted && myPred && (
-                    <div className="mt-2 flex items-center gap-3">
-                      {POSITIONS.map(pos => {
-                        const driverName = myPred.prediction?.[pos]
-                        const photoUrl   = getDriverPhoto(firestoreDrivers, driverName)
-                        return (
-                          <div key={pos} className="flex items-center gap-1">
-                            <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 bg-surfaceHigh flex items-center justify-center text-[11px] font-bold text-muted">
-                              {photoUrl
-                                ? <img src={photoUrl} alt="" className="w-full h-full object-cover object-top" />
-                                : <span>{driverName?.[0] ?? '?'}</span>
-                              }
-                            </div>
-                            <span className={`text-[11px] font-bold ${POS_COLOR[pos]}`}>{driverName}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
+                    <PredictionPreview prediction={myPred.prediction} drivers={firestoreDrivers} className="mt-2" />
                   )}
                 </button>
 
