@@ -1,20 +1,22 @@
 import { useMemo, useState } from 'react'
-import { Pencil, ChevronDown, ChevronUp, Star, Timer, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Pencil, ChevronDown, ChevronUp, Star, Timer, AlertTriangle, RefreshCw, Lock } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useRaceTiming } from '../hooks/useRaceTiming'
 import { useQualifyingPhase } from '../hooks/useQualifyingPhase'
 import { useCollection, useDocument, where } from '../hooks/useFirestore'
 import { calculateAllSeasonScores } from '../utils/scoring'
 import { getProfile } from '../utils/profiles'
-import { hasRaceStarted, formatRaceLocalTimeWithTz, raceStartInstant } from '../utils/races'
-import { driverCode, formatLongDate, ordinal, rankOf } from '../utils/sheetStats'
+import { hasRaceStarted, formatRaceLocalTimeWithTz, raceStartInstant, withRoundNumbers } from '../utils/races'
+import { circuitLabel, countdownParts, driverCode, formatLongDate, ordinal, rankOf } from '../utils/sheetStats'
 import { getModificationCount } from '../utils/predictions'
 import { summarizePenalties } from '../utils/penalties'
 import Countdown from '../components/Countdown'
 import HeaderBadges from '../components/HeaderBadges'
 import PredictionSheet from '../components/PredictionSheet'
 import PredictionTimestamps from '../components/PredictionTimestamps'
-import QualifyingPodium, { getQualifyingPodium } from '../components/QualifyingPodium'
+import { getQualifyingPodium } from '../components/QualifyingPodium'
+import CircuitTrack from '../components/CircuitTrack'
+import { useNowEvery } from '../hooks/useNowEvery'
 import CompactPodium from '../components/sheet/CompactPodium'
 import Portrait from '../components/sheet/Portrait'
 import Skeleton, { SkeletonCard } from '../components/Skeleton'
@@ -125,6 +127,27 @@ function GapSeparator({ count }) {
 // Pronostics du prochain GP : fiches des autres joueurs visibles avant le bouton « Voir les N autres joueurs ».
 const OTHERS_PREVIEW = 3
 
+// Prochaine échéance en petit sous le compteur « héros » : nom, jour et heure, puis
+// soit des puces « 3j 2h 5min », soit un texte (ex. horaire pas encore connu).
+function NextLine({ name, when, parts, text }) {
+  return (
+    <div className="mt-4 rounded-xl bg-bg/50 border border-border/70 px-3 py-2 flex items-center justify-between gap-2">
+      <p className="text-[11px] text-muted leading-tight">
+        <span className="font-bold uppercase tracking-widest text-white">{name}</span><br />{when ?? text}
+      </p>
+      {parts && (
+        <div className="flex gap-1">
+          {parts.map(p => (
+            <span key={p.unit} className="bg-surfaceHigh rounded-md px-1.5 py-px text-[13px] font-black tabular-nums leading-tight">
+              {p.n}<span className="text-[11px] text-muted font-bold ml-0.5">{p.unit}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueName, activeLeagueId, leagueOptions, onSwitchLeague, addToast }) {
   const { user } = useAuth()
   const [predictionSheetOpen, setPredictionSheetOpen] = useState(false)
@@ -169,6 +192,14 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
     sortedRaces.find(r => r.status === 'upcoming'),
     [sortedRaces]
   )
+
+  // Numéro de manche affiché (position dans le calendrier trié, courses annulées comprises).
+  const nextRound = useMemo(
+    () => withRoundNumbers(sortedRaces).find(r => r.id === nextRace?.id)?.round ?? null,
+    [sortedRaces, nextRace]
+  )
+  // Horloge d'affichage seule (puces de la prochaine échéance) : aucune décision n'en dépend.
+  const nowDisplay = useNowEvery(30000)
 
   // Flips by itself when the GP start is crossed (no reload needed).
   const { started: raceStarted } = useRaceTiming(nextRace)
@@ -520,80 +551,78 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
           </div>
         )}
 
-        {/* ── 1. Prochain GP ── */}
+        {/* ── 1. Prochain GP ── une seule échéance en grand (la prochaine), la suivante en ligne */}
         {loading ? (
           <SkeletonCard />
         ) : nextRace ? (
-          <div className="card p-5">
-            <span className="text-accent font-bold text-xs uppercase tracking-widest">Prochain GP</span>
-            <div className="flex items-center gap-3 mt-3 mb-4">
-              <span className="text-4xl">{nextRace.flag}</span>
-              <div>
-                <h2 className="text-xl font-black leading-tight">GP {nextRace.name}</h2>
-                <p className="text-xs text-muted mt-0.5">
-                  {new Date(nextRace.date + 'T00:00:00').toLocaleDateString('fr-FR', {
-                    weekday: 'long', day: 'numeric', month: 'long'
-                  })}
-                </p>
+          <div className="card p-5 relative overflow-hidden">
+            <CircuitTrack race={nextRace} size={230} className="absolute -right-8 top-8 opacity-[0.07] pointer-events-none" />
+            <div className="relative">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-accent font-bold text-xs uppercase tracking-widest pt-1">Prochain GP</span>
+                <span className={`shrink-0 flex items-center gap-1.5 text-xs font-bold ${myPrediction ? 'text-green-400' : raceStarted ? 'text-muted' : 'text-accent'}`}>
+                  <span className={`w-2 h-2 rounded-full ${myPrediction ? 'bg-green-500' : raceStarted ? 'bg-muted' : 'bg-accent animate-pulse'}`} />
+                  {myPrediction ? 'Pronostic soumis' : raceStarted ? 'Pas de prono' : 'Pas encore de prono'}
+                </span>
               </div>
-            </div>
-
-            {/* Qualifications : horaire pas encore connu (course à plus de ~7 jours),
-                compteur avant la séance, ou séance en cours sans podium. */}
-            {qualifyingPhase === 'announced' && (
-              <div className="rounded-lg border border-border px-3 py-2.5 mb-4 text-center text-xs font-semibold text-muted">
-                Horaire des qualifs bientôt disponible
-              </div>
-            )}
-            {qualifyingPhase === 'before' && (
-              <div className="mb-4">
-                <Countdown targetDate={qualifyingMs} title={qualifyingTitle} endText={null} />
-              </div>
-            )}
-            {qualifyingPhase === 'live' && (
-              <div className="rounded-lg border border-accent/60 px-3 py-2.5 mb-4 text-center text-xs font-bold text-white">
-                <span className="inline-block w-[7px] h-[7px] rounded-full bg-accent mr-1.5 align-middle" aria-hidden="true" />
-                Qualifications en cours
-              </div>
-            )}
-
-            {/* Full countdown J / HH / MM / SEC, titre = jour et heure locaux */}
-            <Countdown targetDate={raceStartMs} title={raceTitle} />
-
-            {/* Podium des qualifications (races.qualifying) : bande affichée sous
-                le compteur de la course seulement si P1, P2 et P3 sont tous connus. */}
-            {qualifyingPodium && (
-              <div className="mt-4 pt-0.5 border-t border-border">
-                <QualifyingPodium podium={qualifyingPodium} drivers={drivers} />
-              </div>
-            )}
-
-            {/* Prediction status */}
-            <div className="mt-4 pt-4 border-t border-border">
-              {myPrediction ? (
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-green-500" />
-                  <span className="text-sm text-green-400 font-semibold">Pronostic soumis</span>
+              <div className="flex items-center gap-3 mt-3 mb-4">
+                <span className="text-4xl leading-none">{nextRace.flag}</span>
+                <div className="min-w-0">
+                  <h2 className="text-2xl font-black leading-tight">GP {nextRace.name}</h2>
+                  <p className="text-xs text-muted mt-0.5">
+                    {nextRound != null && `Manche ${nextRound} · `}{formatLongDate(nextRace.date)}
+                  </p>
+                  {circuitLabel(nextRace) && <p className="text-xs text-white/70 leading-tight mt-0.5">{circuitLabel(nextRace)}</p>}
                 </div>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                    <span className="text-sm text-accent font-semibold">Pas encore de pronostic</span>
+              </div>
+
+              {raceStarted ? (
+                <div className="rounded-xl border border-border bg-surfaceHigh/60 px-3 py-5 text-center">
+                  <p className="text-base font-black flex items-center justify-center gap-2"><Lock size={16} className="text-muted" />Départ donné</p>
+                  <p className="text-xs text-muted mt-1">Les pronostics sont verrouillés</p>
+                </div>
+              ) : qualifyingPhase === 'before' ? (
+                <>
+                  <Countdown targetDate={qualifyingMs} title={qualifyingTitle} endText={null} />
+                  <NextLine name="Course" when={raceTitle?.when} parts={countdownParts(raceStartMs - nowDisplay)} />
+                </>
+              ) : qualifyingPhase === 'live' ? (
+                <>
+                  <div className="rounded-xl border border-accent/60 bg-accent/10 px-3 py-5 text-center">
+                    <p className="text-base font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse" aria-hidden="true" />Qualifications en cours
+                    </p>
+                    {qualifyingTitle?.when && <p className="text-xs text-muted mt-1">Séance commencée : {qualifyingTitle.when}</p>}
                   </div>
-                  {raceStarted ? (
-                    <span className="text-xs text-muted font-bold px-3 py-1.5">
-                      Pronostics verrouillés
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => openRaceSheet(nextRace)}
-                      className="relative text-xs bg-accent text-white font-bold px-3 py-1.5 rounded-lg after:absolute after:-inset-y-2 after:inset-x-0"
-                    >
-                      Pronostiquer →
-                    </button>
-                  )}
+                  <NextLine name="Course" when={raceTitle?.when} parts={countdownParts(raceStartMs - nowDisplay)} />
+                </>
+              ) : (
+                <>
+                  <Countdown targetDate={raceStartMs} title={raceTitle} />
+                  {qualifyingPhase === 'announced' && <NextLine name="Qualifications" text="Horaire bientôt disponible" />}
+                </>
+              )}
+
+              {/* Podium des qualifications (races.qualifying) : seulement si P1, P2 et P3 sont connus. */}
+              {qualifyingPodium && (
+                <div className="mt-4 pt-4 border-t border-border/60">
+                  <p className="text-[11px] text-muted uppercase tracking-wide font-bold mb-2 text-center">Podium des qualifications</p>
+                  <CompactPodium
+                    result={Object.fromEntries(qualifyingPodium.map(e => [e.pos, e.name]))}
+                    times={Object.fromEntries(qualifyingPodium.map(e => [e.pos, e.time]))}
+                    drivers={drivers}
+                  />
                 </div>
+              )}
+
+              {/* Pronostiquer : seulement sans pronostic et avant le départ. */}
+              {!myPrediction && !raceStarted && (
+                <button
+                  onClick={() => openRaceSheet(nextRace)}
+                  className="mt-4 w-full text-sm bg-accent text-white font-bold py-3 rounded-xl active:scale-95 transition-transform"
+                >
+                  Pronostiquer →
+                </button>
               )}
             </div>
           </div>
