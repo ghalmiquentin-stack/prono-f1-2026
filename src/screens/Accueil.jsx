@@ -293,7 +293,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
   // Détail d'un pronostic (heures, modifications, premier podium, pénalités).
   const renderPredictionDetail = (player, d, { showFullNames = false } = {}) => (
     <div className="space-y-1.5">
-      <PredictionTimestamps prediction={d.pred} penalties={penalties} playerId={player.id} raceId={nextRace.id} />
+      <PredictionTimestamps prediction={d.pred} penalties={penalties} playerId={player.id} raceId={nextRace.id} modifiedTone={d.penalizedMod ? PEN_TONE : FREE_TONE} />
       {d.modCount > 0 && (
         <p className="text-xs text-muted pl-[16px]">
           {d.changed.some(Boolean)

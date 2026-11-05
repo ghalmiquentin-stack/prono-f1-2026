@@ -1,4 +1,4 @@
-import { Clock } from 'lucide-react'
+import { Clock, RefreshCw } from 'lucide-react'
 import { getModificationCount } from '../utils/predictions'
 
 // Date valide ou null — jamais d'exception (Timestamp Firestore, Date, nombre,
@@ -85,7 +85,9 @@ export function formatModifiedLine(count, penalizedCount, hourMinute) {
  * `penalties` = pénalités de la ligue (déjà filtrées par ligue par la requête) ;
  * le composant ne garde que celles de (playerId, raceId).
  */
-export default function PredictionTimestamps({ prediction, penalties, playerId, raceId, className = '' }) {
+// `modifiedTone` (facultatif) : couleur d'une icône de modification placée devant la ligne
+// « Modifié … » (bleu ciel = sans pénalité, rouge = pénalisée). Sans lui : texte seul.
+export default function PredictionTimestamps({ prediction, penalties, playerId, raceId, className = '', modifiedTone }) {
   try {
     const autoPens = (Array.isArray(penalties) ? penalties : [])
       .filter(p => p && p.source === 'auto' && p.playerId === playerId && p.raceId === raceId)
@@ -119,9 +121,14 @@ export default function PredictionTimestamps({ prediction, penalties, playerId, 
             Soumis le {submitted}
           </p>
         )}
-        {modified && (
+        {modified && (modifiedTone ? (
+          <p className="flex items-center gap-1 text-xs text-muted">
+            <RefreshCw size={12} className="shrink-0" style={{ color: modifiedTone }} aria-hidden="true" />
+            {modified}
+          </p>
+        ) : (
           <p className="text-xs text-muted pl-[16px]">{modified}</p>
-        )}
+        ))}
       </div>
     )
   } catch {
