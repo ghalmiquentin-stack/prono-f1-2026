@@ -14,15 +14,21 @@ import { MAX_POINTS_PER_GP, STREAK_BONUS } from '../../utils/statsData'
 
 const TRACK = '#2E2E42'
 const MUTED = '#9494AC'
+const CONNECTOR = 'rgba(255,255,255,0.22)'
 const GOLD = '#FFD700'
 const SURFACE = '#1E1E2E'
 const MAX_WIDTH = 560
 const X_START = 18
 const RIGHT_MARGIN = 34 // place du drapeau d'arrivée
-const H = 80
+const NAME_CHAR_WIDTH = 6.2 // largeur approximative d'une lettre en 11 px gras
+const ROW_1 = 82 // ligne de base des prénoms, premier niveau
+const ROW_2 = 98 // deuxième niveau
+const MIN_AVATAR_GAP = 44 // entre les centres des deux avatars (leur rayon est de 15 px : il reste 14 px entre les cercles)
 const MIN_REMAINING_PX = 96 // tronçon « reste à jouer » : de quoi écrire « 150 pts à jouer »
 
-export default function TitleCard({ data }) {
+// Les noms ne sont pas écrits sous les avatars : une légende dessous les donne en entier, quelle que
+// soit leur longueur (un pseudo peut avoir jusqu'à 20 lettres).
+export default function TitleCard({ data, minAvatarGap = MIN_AVATAR_GAP }) {
   const { me, list, completed, upcoming } = data
   const [info, setInfo] = useState(false)
   const [boxRef, boxWidth] = useElementWidth()
@@ -67,10 +73,26 @@ export default function TitleCard({ data }) {
   const behind = isLeader ? rival : me
   let xAhead = X_END - remainingPx
   let xBehind = Math.max(X_START, xAhead - gap * pxPerPoint)
-  if (xAhead - xBehind < 34) {
-    xBehind = Math.max(X_START, xAhead - 34)
-    if (xAhead - xBehind < 34) xAhead = xBehind + 34
+  if (xAhead - xBehind < minAvatarGap) {
+    xBehind = Math.max(X_START, xAhead - minAvatarGap)
+    if (xAhead - xBehind < minAvatarGap) xAhead = xBehind + minAvatarGap
   }
+
+  // Prénoms : un trait discret descend de chaque avatar vers son prénom. Si les deux prénoms tiennent
+  // côte à côte ils sont au même niveau ; s'ils se gêneraient (pseudo long), celui du rival passe un niveau
+  // plus bas et son trait s'allonge. « Toi » reste toujours au premier niveau.
+  const nameOf = p => (p.id === me.id ? 'Toi' : p.name)
+  const other = behind.id === me.id ? ahead : behind
+  const xMe = behind.id === me.id ? xBehind : xAhead
+  const xOther = other.id === ahead.id ? xAhead : xBehind
+  const maxChars = Math.floor((W - 8) / NAME_CHAR_WIDTH)
+  const otherName = nameOf(other).length > maxChars ? `${nameOf(other).slice(0, maxChars - 1)}…` : nameOf(other)
+  const otherHalf = (otherName.length * NAME_CHAR_WIDTH) / 2
+  const otherCenter = Math.max(otherHalf + 2, Math.min(W - otherHalf - 2, xOther))
+  const meHalf = ('Toi'.length * NAME_CHAR_WIDTH) / 2
+  const overlaps = otherCenter - otherHalf - 6 < xMe + meHalf && otherCenter + otherHalf + 6 > xMe - meHalf
+  const otherRow = overlaps ? 2 : 1
+  const svgHeight = otherRow === 2 ? ROW_2 + 8 : ROW_1 + 8
 
   const bonusText = bonusRelevant > 0 ? ` + ${bonusRelevant} bonus × ${STREAK_BONUS} pts` : ''
   const potText = `${remaining} GP × ${MAX_POINTS_PER_GP} pts${bonusText}`
@@ -96,8 +118,8 @@ export default function TitleCard({ data }) {
       <p className="text-base font-black leading-snug">{headline}</p>
       <p className="text-sm text-muted leading-snug mt-0.5">{help}</p>
 
-      <div ref={boxRef} className="mt-2">
-        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block mx-auto" role="img" aria-label="Position des deux joueurs sur la piste vers la fin de saison">
+      <div ref={boxRef} className="mt-5">
+        <svg viewBox={`0 0 ${W} ${svgHeight}`} width={W} height={svgHeight} className="block mx-auto" role="img" aria-label="Position des deux joueurs sur la piste vers la fin de saison">
           <line x1={X_START} x2={X_END} y1="46" y2="46" stroke={TRACK} strokeWidth="4" strokeLinecap="round" />
           <line x1={xAhead} x2={X_END} y1="46" y2="46" stroke={decided ? GOLD : 'rgba(255,255,255,0.28)'} strokeWidth="4" strokeDasharray={decided ? '0' : '2 6'} strokeLinecap="round" />
           <text x={X_END + 4} y="52" fontSize="20">{decided ? '🏆' : '🏁'}</text>
@@ -117,9 +139,13 @@ export default function TitleCard({ data }) {
               <circle cx={x} cy="46" r="15" fill={SURFACE} stroke={p.color} strokeWidth="2.5" />
               <text x={x} y="52" fontSize="16" textAnchor="middle">{p.avatar}</text>
               {decided && p.id === leader.id && <text x={x} y="26" fontSize="16" textAnchor="middle">👑</text>}
-              <text x={x} y="78" fontSize="11" fontWeight="700" fill={MUTED} textAnchor="middle">{p.id === me.id ? 'Toi' : p.name.slice(0, 9)}</text>
             </g>
           ))}
+          {/* traits discrets vers les prénoms */}
+          <line x1={xMe} x2={xMe} y1="63" y2={ROW_1 - 12} stroke={CONNECTOR} strokeWidth="1" />
+          <line x1={xOther} x2={xOther} y1="63" y2={(otherRow === 2 ? ROW_2 : ROW_1) - 12} stroke={CONNECTOR} strokeWidth="1" />
+          <text x={xMe} y={ROW_1} fontSize="11" fontWeight="700" fill={MUTED} textAnchor="middle">Toi</text>
+          <text x={otherCenter} y={otherRow === 2 ? ROW_2 : ROW_1} fontSize="11" fontWeight="700" fill={MUTED} textAnchor="middle">{otherName}</text>
         </svg>
       </div>
 
