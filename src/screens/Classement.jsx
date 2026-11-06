@@ -1,44 +1,40 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
-import { calculateAllSeasonScores } from '../utils/scoring'
 import { getProfile } from '../utils/profiles'
+import { computeStandings } from '../utils/standings'
+import { formatLongDate } from '../utils/sheetStats'
 import HeaderBadges from '../components/HeaderBadges'
-import Skeleton from '../components/Skeleton'
+import PredictionSheet from '../components/PredictionSheet'
+import MyPositionCard from '../components/classement/MyPositionCard'
+import StandingsList from '../components/classement/StandingsList'
+import PlayerSheet from '../components/classement/PlayerSheet'
 
-// Dense ranking: same points → same rank, no gap after ties
-function rankWithTies(sorted) {
-  const uniqueTotals = [...new Set(sorted.map(p => p.total))].sort((a, b) => b - a)
-  return sorted.map(player => ({
-    ...player,
-    rank: uniqueTotals.indexOf(player.total) + 1,
-  }))
+// Page Classement : complément de la carte « Classement général » de l'Accueil.
+//   1. « Ma position » : mon rang et les deux joueurs les plus proches ;
+//   2. une liste unique (médailles pour le podium, ▲▼ et points du dernier GP) ;
+//   3. au toucher, la feuille d'un joueur (d'où viennent ses points) ; un GP
+//      touché dans cette feuille ouvre la feuille du GP (celle de Courses).
+// Lecture seule : les points viennent de calculateAllSeasonScores.
+
+function ClassementSkeleton() {
+  return (
+    <div className="px-5 pt-5 pb-4 space-y-3" aria-hidden="true">
+      <div className="flex items-center justify-between mb-2">
+        <div className="skeleton h-9 w-32 rounded-xl" />
+        <div className="skeleton h-11 w-32 rounded-xl" />
+      </div>
+      <div className="skeleton h-8 w-40 rounded" />
+      <div className="skeleton h-4 w-56 rounded" />
+      <div className="skeleton h-[226px] w-full rounded-lg mt-4" />
+      <div className="card p-3 space-y-2">
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton h-[52px] w-full rounded-lg" />)}
+      </div>
+    </div>
+  )
 }
 
-function rankBg(rank) {
-  if (rank === 1) return 'bg-gold text-bg'
-  if (rank === 2) return 'bg-silver text-bg'
-  if (rank === 3) return 'bg-bronze text-bg'
-  return 'bg-surfaceHigh text-muted'
-}
-
-const STEP_STYLE = {
-  1: { bg: 'bg-gold/10 border-gold/30',     textPts: '#FFD700' },
-  2: { bg: 'bg-silver/10 border-silver/30', textPts: '#C0C0C0' },
-  3: { bg: 'bg-bronze/10 border-bronze/30', textPts: '#CD7F32' },
-}
-
-// Height for one player item (avatar + name + pts + internal gap)
-const ITEM_H   = 62
-const ITEM_GAP = 6
-const STEP_PAD = 20   // vertical padding inside the step
-const STEP_GAP = 44   // guaranteed visual gap between consecutive ranks
-
-function contentHeight(playerCount) {
-  return playerCount * ITEM_H + Math.max(0, playerCount - 1) * ITEM_GAP + STEP_PAD
-}
-
-export default function Classement({ currentPlayerId, activeLeagueName, activeLeagueId, leagueOptions, onSwitchLeague, setActiveTab }) {
+export default function Classement({ currentPlayerId, activeLeagueName, activeLeagueId, leagueOptions, onSwitchLeague, setActiveTab, addToast }) {
   const { user } = useAuth()
   const leagueConstraint = useMemo(() => [where('leagueId', '==', activeLeagueId)], [activeLeagueId])
   const { data: players, loading: playersLoading, error: playersError } = useCollection(user ? 'players' : null, leagueConstraint)
@@ -46,85 +42,45 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
   const { data: races, loading: racesLoading, error: racesError } = useCollection(user ? 'races' : null)
   const { data: predictions, error: predictionsError } = useCollection(user ? 'predictions' : null, leagueConstraint)
   const { data: penalties, error: penaltiesError } = useCollection(user ? 'penalties' : null, leagueConstraint)
+  const { data: drivers } = useCollection(user ? 'drivers' : null)
+
+  const [selectedPlayer, setSelectedPlayer] = useState(null)
+  const [selectedRace, setSelectedRace] = useState(null)
 
   const loading = playersLoading || racesLoading
   const hasReadError = !!(playersError || racesError || predictionsError || penaltiesError)
 
-  const sortedRaces = useMemo(() =>
-    [...races].sort((a, b) => a.id - b.id),
-    [races]
+  const sortedRaces = useMemo(() => [...races].sort((a, b) => a.id - b.id), [races])
+
+  // Courses restantes : les GP annulés ne seront jamais courus, on ne les compte pas.
+  const remainingRacesCount = useMemo(
+    () => sortedRaces.filter(r => r.status === 'upcoming').length,
+    [sortedRaces],
   )
 
-  const completedRaces = useMemo(() =>
-    sortedRaces.filter(r => r.status === 'completed'),
-    [sortedRaces]
-  )
-
-  // Races still to come — excludes cancelled GPs, which will never be run
-  // and shouldn't inflate the "restantes" count.
-  const remainingRacesCount = useMemo(() =>
-    sortedRaces.filter(r => r.status === 'upcoming').length,
-    [sortedRaces]
-  )
-
-  // Build standings — identity (color/avatar/displayName) resolved from profiles/{authUid}
-  const standings = useMemo(() => {
-    if (!players.length) return []
-    const raw = calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
-      .map(player => {
-        const { total, raceScores, streakBonus } = player
-        const identity       = getProfile(profiles, player)
-        const racesPlayed    = raceScores.filter(rs => rs.net !== null).length
-        const avgScore       = racesPlayed > 0 ? (total / racesPlayed).toFixed(1) : '0.0'
-        const perfectPodiums = raceScores.filter(rs => rs.perfectPodium).length
-        const bestScore      = raceScores.reduce((best, rs) => Math.max(best, rs.net ?? 0), 0)
-        return {
-          ...player,
-          color:       String(identity?.color       ?? '#6B6B8A'),
-          avatar:      String(identity?.avatar      ?? '🏎️'),
-          displayName: String(identity?.displayName ?? player.id),
-          total, raceScores, streakBonus,
-          racesPlayed, avgScore, perfectPodiums, bestScore,
-        }
-      })
-      .sort((a, b) => b.total - a.total)
-    return rankWithTies(raw)
-  }, [players, profiles, races, predictions, penalties, sortedRaces])
-
-  // Podium groups (rank 1 / 2 / 3 only)
-  const podiumGroups = useMemo(() => {
-    const groups = {}
-    for (const p of standings) {
-      if (p.rank <= 3) {
-        if (!groups[p.rank]) groups[p.rank] = []
-        groups[p.rank].push(p)
-      }
+  // Identité (couleur, avatar, pseudo) résolue depuis profiles/{authUid}.
+  const resolveIdentity = useMemo(() => (player) => {
+    const identity = getProfile(profiles, player)
+    return {
+      color: String(identity?.color ?? '#6B6B8A'),
+      avatar: String(identity?.avatar ?? '🏎️'),
+      displayName: String(identity?.displayName ?? player.id),
     }
-    return groups  // { 1: [...], 2: [...], 3: [...] }
-  }, [standings])
+  }, [profiles])
 
-  // Compute step heights so rank-1 > rank-2 + GAP > rank-3 + GAP
-  const stepHeights = useMemo(() => {
-    const h3 = Math.max(contentHeight(podiumGroups[3]?.length ?? 0), ITEM_H + STEP_PAD)
-    const h2 = Math.max(contentHeight(podiumGroups[2]?.length ?? 0), h3 + STEP_GAP)
-    const h1 = Math.max(contentHeight(podiumGroups[1]?.length ?? 0), h2 + STEP_GAP)
-    return { 1: h1, 2: h2, 3: h3 }
-  }, [podiumGroups])
-
-  const currentPlayerStanding = useMemo(
-    () => standings.find(p => p.id === currentPlayerId),
-    [standings, currentPlayerId]
+  const { list: standings, completed: completedRaces, lastRace } = useMemo(
+    () => computeStandings({ players, sortedRaces, predictions, penalties, resolveIdentity }),
+    [players, sortedRaces, predictions, penalties, resolveIdentity],
   )
 
-  const leaderTotal = standings[0]?.total ?? 0
+  const list = useMemo(
+    () => standings.map(p => ({ ...p, isMe: p.id === currentPlayerId })),
+    [standings, currentPlayerId],
+  )
+  const me = list.find(p => p.isMe) ?? null
+  const started = completedRaces.length > 0
 
-  if (loading) {
-    return (
-      <div className="px-5 pt-5 pb-4 space-y-4">
-        <Skeleton rows={4} height="h-24" />
-      </div>
-    )
-  }
+  if (loading) return <ClassementSkeleton />
 
   return (
     <div className="pb-4">
@@ -136,10 +92,10 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
           onSwitchLeague={onSwitchLeague}
           onManageLeagues={() => setActiveTab?.('leagues')}
           player={{
-            avatar: String(currentPlayerStanding?.avatar ?? '🏎️'),
-            color: String(currentPlayerStanding?.color ?? '#6B6B8A'),
-            displayName: String(currentPlayerStanding?.displayName ?? currentPlayerId),
-            points: currentPlayerStanding?.total ?? 0,
+            avatar: String(me?.avatar ?? '🏎️'),
+            color: String(me?.color ?? '#6B6B8A'),
+            displayName: String(me?.displayName ?? currentPlayerId),
+            points: me?.total ?? 0,
           }}
           onOpenProfile={() => setActiveTab?.('monprofil')}
         />
@@ -148,9 +104,14 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
           {completedRaces.length} course{completedRaces.length !== 1 ? 's' : ''} disputée{completedRaces.length !== 1 ? 's' : ''}
           {' '}· {remainingRacesCount} restante{remainingRacesCount !== 1 ? 's' : ''}
         </p>
+        {lastRace && (
+          <p className="text-[11px] text-muted mt-0.5">
+            Dernier résultat : {lastRace.flag} GP {lastRace.name} · {formatLongDate(lastRace.date)}
+          </p>
+        )}
       </div>
 
-      {/* Read error banner — stays visible alongside whatever data did load */}
+      {/* Bannière d'erreur de lecture : reste visible à côté des données chargées */}
       {hasReadError && (
         <div className="px-5 mb-4">
           <div className="card p-5 border-accent/40">
@@ -167,199 +128,62 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
         </div>
       )}
 
-      {/* ── Podium visuel ── */}
-      {Object.keys(podiumGroups).length >= 2 && (
-        <div className="px-5 mb-5">
-          {/* Visual F1 order: rank-2 left | rank-1 centre | rank-3 right */}
-          <div className="flex items-end justify-center gap-2">
-            {[2, 1, 3].map(rank => {
-              const group = podiumGroups[rank]
-              const style = STEP_STYLE[rank]
-              const h     = stepHeights[rank]
-
-              if (!group) {
-                // Empty placeholder to maintain 3-column layout
-                return <div key={rank} className="flex-1" style={{ height: h }} />
-              }
-
-              return (
-                <div
-                  key={rank}
-                  className={`flex-1 flex flex-col items-center justify-center rounded-t-xl border ${style.bg} px-1 py-2`}
-                  style={{ height: h }}
-                >
-                  {/* Players on this step */}
-                  {group.map((p, i) => (
-                    <div
-                      key={p.id}
-                      className={`flex flex-col items-center ${i > 0 ? 'mt-1.5 pt-1.5 border-t border-white/10 w-full' : ''}`}
-                    >
-                      <span className="text-xl leading-none mb-0.5">{p.avatar}</span>
-                      <span
-                        className="text-[11px] font-bold leading-tight text-center w-full px-1"
-                        style={{ color: p.color }}
-                      >
-                        {p.displayName}
-                      </span>
-                      <span
-                        className="text-xs font-black leading-tight whitespace-nowrap"
-                        style={{ color: style.textPts }}
-                      >
-                        {p.total} pts
-                      </span>
-                    </div>
-                  ))}
-
-                  {rank === 1 && (
-                    <span className="text-gold text-sm leading-none mt-1">👑</span>
-                  )}
-                </div>
-              )
-            })}
+      {list.length === 0 ? (
+        <div className="px-5">
+          <div className="card p-5 text-center">
+            <p className="text-sm text-muted">Aucun joueur dans cette ligue pour le moment.</p>
           </div>
         </div>
-      )}
-
-      {/* ── Full standings cards ── */}
-      <div className="px-5 space-y-3">
-        {standings.map(player => {
-          const isCurrent = player.id === currentPlayerId
-          const pct = leaderTotal > 0 ? (player.total / leaderTotal) * 100 : 0
-          const gap = player.total < leaderTotal ? leaderTotal - player.total : 0
-
-          return (
-            <div
-              key={player.id}
-              className={`card p-4 transition-all ${isCurrent ? 'ring-2 ring-opacity-50' : ''} ${player.active === false ? 'opacity-60' : ''}`}
-              style={isCurrent ? { '--tw-ring-color': player.color, borderColor: player.color + '30' } : {}}
-            >
-              {/* Row 1: rank badge + avatar + name + score */}
-              <div className="flex items-center gap-3 mb-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${rankBg(player.rank)}`}>
-                  {player.rank}
-                </div>
-                <span className="text-xl leading-none">{player.avatar}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <p className="font-black text-base truncate">
-                      {player.displayName}
-                      {isCurrent && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
-                    </p>
-                    {player.active === false && (
-                      <span className="text-[9px] font-bold uppercase tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full shrink-0">
-                        Parti
-                      </span>
-                    )}
-                  </div>
-                  {gap > 0 ? (
-                    <p className="text-xs text-muted">-{gap} pts du leader</p>
-                  ) : (
-                    <p className="text-xs text-gold">En tête 🏆</p>
-                  )}
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="font-black text-xl leading-tight" style={{ color: player.color }}>
-                    {player.total}
-                  </p>
-                  <p className="text-xs text-muted">pts</p>
-                </div>
-              </div>
-
-              {/* Progress bar */}
-              <div className="h-2 bg-border rounded-full mb-3 overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${pct}%`, backgroundColor: player.color }}
-                />
-              </div>
-
-              {/* Stats */}
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  { label: 'Courses',    value: player.racesPlayed    },
-                  { label: 'Moy.',       value: player.avgScore        },
-                  { label: 'Best',       value: player.bestScore       },
-                  { label: '⭐ Parfait', value: player.perfectPodiums  },
-                ].map(stat => (
-                  <div key={stat.label} className="text-center">
-                    <p className="font-black text-sm">{stat.value}</p>
-                    <p className="text-[9px] text-muted uppercase tracking-wide">{stat.label}</p>
-                  </div>
-                ))}
-              </div>
-
-              {player.streakBonus > 0 && (
-                <div className="mt-3 pt-3 border-t border-border flex items-center gap-2">
-                  <span className="text-xs text-muted">Bonus série</span>
-                  <span className="text-xs text-gold font-bold">+{player.streakBonus} pts</span>
-                </div>
-              )}
+      ) : (
+        <div className="px-5 space-y-3">
+          {started && me && (
+            <MyPositionCard me={me} count={list.length} lastRace={lastRace} onOpenPlayer={setSelectedPlayer} />
+          )}
+          {!started && (
+            <div className="card p-4">
+              <p className="text-sm font-bold">Le classement démarre au premier GP</p>
+              <p className="text-xs text-muted mt-1">Pour l'instant, tout le monde est à 0 point.</p>
             </div>
-          )
-        })}
-      </div>
-
-      {/* ── Détail par course ── */}
-      {completedRaces.length > 0 && (
-        <div className="px-5 mt-6">
-          <p className="section-title mb-4">Détail par course</p>
-          <div className="overflow-x-auto -mx-5 px-5">
-            <table className="w-full min-w-[400px] text-sm">
-              <thead>
-                <tr>
-                  <th className="text-left py-2 pr-3 text-muted text-xs font-bold w-20">Course</th>
-                  {standings.map(p => (
-                    <th key={p.id} className="text-center py-2 px-1">
-                      <div className="flex flex-col items-center gap-0.5">
-                        <span className="text-base leading-none">{p.avatar}</span>
-                        <span className="text-[9px] font-bold" style={{ color: p.color }}>
-                          {p.displayName}
-                        </span>
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {completedRaces.map(race => (
-                  <tr key={race.id} className="border-t border-border">
-                    <td className="py-2 pr-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-base">{race.flag}</span>
-                        <span className="text-xs text-muted truncate max-w-[60px]">{race.name}</span>
-                      </div>
-                    </td>
-                    {standings.map(player => {
-                      const rs = player.raceScores?.find(r => r.raceId === race.id)
-                      return (
-                        <td key={player.id} className="text-center py-2 px-1">
-                          {rs?.net !== null && rs?.net !== undefined ? (
-                            <span className="font-bold text-sm" style={{ color: player.color }}>
-                              {rs.net}
-                            </span>
-                          ) : (
-                            <span className="text-muted text-xs">—</span>
-                          )}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-                <tr className="border-t-2 border-border">
-                  <td className="py-2 pr-3 font-black text-xs uppercase text-muted">Total</td>
-                  {standings.map(player => (
-                    <td key={player.id} className="text-center py-2 px-1">
-                      <span className="font-black text-sm" style={{ color: player.color }}>
-                        {player.total}
-                      </span>
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          )}
+          <StandingsList list={list} lastRace={lastRace} started={started} onOpenPlayer={setSelectedPlayer} />
+          <p className="text-[11px] text-muted text-center leading-snug px-2">
+            Points = pronostics + podiums parfaits + bonus série − pénalités.{' '}
+            <button
+              type="button"
+              onClick={() => setActiveTab?.('reglages-du-jeu')}
+              className="relative text-accent font-bold after:absolute after:-inset-y-3.5 after:inset-x-0"
+            >
+              Voir les règles →
+            </button>
+          </p>
         </div>
       )}
+
+      {selectedPlayer && (
+        <PlayerSheet
+          player={list.find(p => p.id === selectedPlayer.id) ?? selectedPlayer}
+          count={list.length}
+          completedRaces={completedRaces}
+          meTotal={started && me ? me.total : null}
+          onClose={() => setSelectedPlayer(null)}
+          onOpenRace={setSelectedRace}
+        />
+      )}
+
+      <PredictionSheet
+        isOpen={!!selectedRace}
+        race={selectedRace}
+        races={sortedRaces}
+        onClose={() => setSelectedRace(null)}
+        currentPlayerId={currentPlayerId}
+        activeLeagueId={activeLeagueId}
+        addToast={addToast}
+        players={players}
+        profiles={profiles}
+        predictions={predictions}
+        penalties={penalties}
+        drivers={drivers}
+      />
     </div>
   )
 }
