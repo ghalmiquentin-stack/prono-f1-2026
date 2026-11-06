@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import useElementWidth from '../../hooks/useElementWidth'
 import { ChevronDown, Search } from 'lucide-react'
 import StatsCard from './StatsCard'
 import BottomSheet from '../BottomSheet'
@@ -8,7 +9,7 @@ import { ptsLabel, signedPoints, normalizeText } from '../../utils/standings'
 // au classement (juste en dessous si je suis premier). On change d'adversaire dans une feuille
 // avec recherche dès 16 joueurs et « Autour de toi » dès 8.
 
-const W = 318
+const MAX_WIDTH = 560
 const H = 96
 const MUTED = '#9494AC'
 
@@ -64,6 +65,8 @@ function OpponentSheet({ data, current, onClose, onPick }) {
 export default function DuelCard({ data }) {
   const { me, list, completed } = data
   const [chosen, setChosen] = useState(null)
+  const [boxRef, boxWidth] = useElementWidth()
+  const W = Math.min(boxWidth, MAX_WIDTH)
   const [open, setOpen] = useState(false)
   const meIndex = list.findIndex(p => p.id === me.id)
   const opponent = list.find(p => p.id === chosen) ?? list[meIndex - 1] ?? list[meIndex + 1]
@@ -81,7 +84,7 @@ export default function DuelCard({ data }) {
   const gap = me.total - opponent.total
   const maxAbs = Math.max(5, ...diffs.map(d => Math.abs(d ?? 0)))
   const mid = H / 2
-  const barW = Math.min(22, (W - 4) / n)
+  const barW = Math.min(26, (W - 4) / n)
   const bestOf = p => p.net.reduce((best, v, k) => (v !== null && (best === null || v > p.net[best]) ? k : best), null)
   const myBest = bestOf(me)
   const hisBest = bestOf(opponent)
@@ -135,8 +138,8 @@ export default function DuelCard({ data }) {
           <span className="w-2.5 h-2.5 rounded-sm" style={{ background: opponent.color }} />{opponent.name} devant
         </span>
       </div>
-      <div className="max-w-[560px] mx-auto">
-        <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Qui a gagné chaque GP : barre vers le haut quand je suis devant, vers le bas quand l'autre est devant">
+      <div ref={boxRef}>
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block mx-auto" role="img" aria-label="Qui a gagné chaque GP : barre vers le haut quand je suis devant, vers le bas quand l'autre est devant">
           <line x1="0" x2={W} y1={mid} y2={mid} stroke="rgba(255,255,255,0.35)" />
           {diffs.map((d, k) => {
             if (d === null) return null

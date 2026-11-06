@@ -17,16 +17,19 @@ export default function FormCard({ data }) {
   const { me, list, completed, avgNet, formFrom } = data
   const indexes = completed.map((_, k) => k).slice(formFrom)
   const count = indexes.length
+  const solo = list.length < 2 // seul dans la ligue : rien à comparer
+  // Tout le monde à égalité (début de saison) : « face à la ligue » n'a rien à montrer.
+  const noSpread = list.every(p => p.form === list[0].form)
   const scoreClass = v => (v === null ? 'text-muted' : v < 0 ? 'text-accent' : 'text-white')
 
   return (
     <StatsCard
       title="Ma forme du moment"
-      sub={`Mes ${count > 1 ? `${count} derniers GP` : 'dernier GP'}`}
+      sub={count > 1 ? `Mes ${count} derniers GP` : 'Mon dernier GP'}
       right={
         <div className="text-right shrink-0">
           <p className="text-2xl font-black leading-none" style={{ color: me.color }}>{signedPoints(me.form)}</p>
-          <p className="text-[11px] text-muted">{rankLabel(me.formRank, list.length)}</p>
+          {!solo && <p className="text-[11px] text-muted">{rankLabel(me.formRank, list.length)}</p>}
         </div>
       }
     >
@@ -51,10 +54,10 @@ export default function FormCard({ data }) {
               className="relative flex-1 min-w-0 max-w-[110px] rounded-xl bg-surfaceHigh/60 border border-border/60 py-2 flex flex-col items-center gap-0.5"
               aria-label={`GP ${completed[k].name} : ${net === null ? 'pas de pronostic' : `${net} points`}`}
             >
-              {me.wins[k] && <Star size={11} className="absolute top-1 right-1 text-gold fill-gold" aria-label="Meilleur score du GP" />}
+              {!solo && me.wins[k] && <Star size={11} className="absolute top-1 right-1 text-gold fill-gold" aria-label="Meilleur score du GP" />}
               <span className="text-base leading-none" aria-hidden="true">{completed[k].flag}</span>
               <span className={`text-xl font-black leading-tight ${scoreClass(net)}`}>{net ?? '–'}</span>
-              <Delta value={delta} />
+              {!solo && <Delta value={delta} />}
             </li>
           )
         })}
@@ -64,13 +67,17 @@ export default function FormCard({ data }) {
         <span className="flex-1 h-px bg-border" />
         <span>plus récent ›</span>
       </div>
-      <p className="text-[11px] text-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-        <span><Star size={11} className="inline text-gold fill-gold -mt-0.5" /> meilleur du GP</span>
-        <span><span className="text-green-400 font-black">▲▼</span> vs moyenne de la ligue</span>
-      </p>
-      <div className="border-t border-border/60 mt-3 pt-3">
-        <FaceLeague players={list} me={me} formLength={count} />
-      </div>
+      {!solo && (
+        <p className="text-[11px] text-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          <span><Star size={11} className="inline text-gold fill-gold -mt-0.5" /> meilleur du GP</span>
+          <span><span className="text-green-400 font-black">▲▼</span> vs moyenne de la ligue</span>
+        </p>
+      )}
+      {!solo && !noSpread && (
+        <div className="border-t border-border/60 mt-3 pt-3">
+          <FaceLeague players={list} me={me} formLength={count} />
+        </div>
+      )}
     </StatsCard>
   )
 }

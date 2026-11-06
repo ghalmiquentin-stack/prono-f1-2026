@@ -121,13 +121,18 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
             <SeasonCard data={data} />
           </>
         )}
-        {tab === 'rivaux' && (
+        {tab === 'rivaux' && (data.list.length < 2 ? (
+          <div className="card p-5 text-center">
+            <p className="font-black text-lg">Pas encore de rivaux</p>
+            <p className="text-sm text-muted mt-1">La course au titre, l'écart et les duels apparaîtront quand d'autres joueurs rejoindront ta ligue.</p>
+          </div>
+        ) : (
           <>
             <TitleCard data={data} />
             <GapCard data={data} />
             <DuelCard data={data} />
           </>
-        )}
+        ))}
         {tab === 'pronos' && (
           <>
             <ExactCard data={data} />

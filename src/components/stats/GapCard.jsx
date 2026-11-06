@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import useElementWidth from '../../hooks/useElementWidth'
 import StatsCard from './StatsCard'
 import { quantile } from '../../utils/statsFormat'
 import { signedPoints } from '../../utils/standings'
@@ -11,7 +12,7 @@ import { signedPoints } from '../../utils/standings'
 
 export const MAX_DIRECT_PLAYERS = 6
 
-const W = 318
+const MAX_WIDTH = 560
 const H = 220
 const MARGIN = { left: 4, right: 74, top: 14, bottom: 20 }
 const MEDALS = { 1: '#FFD700', 2: '#C0C0C0', 3: '#CD7F32' }
@@ -33,6 +34,8 @@ function spreadLabels(items, minGap, maxY) {
 export default function GapCard({ data }) {
   const { me, list, completed } = data
   const svgRef = useRef(null)
+  const [boxRef, boxWidth] = useElementWidth()
+  const W = Math.min(boxWidth, MAX_WIDTH)
   const [selected, setSelected] = useState(null)
   const n = completed.length
   const index = selected ?? n - 1
@@ -83,11 +86,13 @@ export default function GapCard({ data }) {
           {ahead === 0 ? 'Tu es en tête.' : `${ahead} joueur${ahead > 1 ? 's' : ''} devant toi.`}
         </p>
       </div>
-      <div className="max-w-[560px] mx-auto">
+      <div ref={boxRef}>
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
-          width="100%"
+          width={W}
+          height={H}
+          className="block mx-auto"
           style={{ touchAction: 'pan-y' }}
           role="img"
           aria-label="Écart de points avec chaque joueur, GP après GP"

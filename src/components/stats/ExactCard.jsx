@@ -11,8 +11,9 @@ const PLACES = [
 
 export default function ExactCard({ data }) {
   const { me, list } = data
+  const solo = list.length < 2
   return (
-    <StatsCard title="Mes pronostics exacts" sub="À quelle place je vois juste, comparé à la ligue.">
+    <StatsCard title="Mes pronostics exacts" sub={solo ? 'À quelle place je vois juste.' : 'À quelle place je vois juste, comparé à la ligue.'}>
       <div className="grid grid-cols-3 gap-2">
         {PLACES.map(({ key, label }) => {
           const mine = me.place[key].n ? me.place[key].exact / me.place[key].n : 0
@@ -23,10 +24,12 @@ export default function ExactCard({ data }) {
             <div key={key} className="rounded-xl bg-surfaceHigh/60 p-2.5 text-center">
               <p className="text-[11px] text-muted font-bold">{label}</p>
               <p className="text-2xl font-black leading-tight" style={{ color: me.color }}>{Math.round(mine * 100)} %</p>
-              <p className="text-[11px] text-muted">ligue {Math.round(league * 100)} %</p>
-              <p className={`text-[11px] font-black ${gap >= 3 ? 'text-green-400' : 'text-muted'}`}>
-                {gap >= 3 ? '▲ mieux' : gap <= -3 ? '▼ moins bien' : '= pareil'}
-              </p>
+              {!solo && <p className="text-[11px] text-muted">ligue {Math.round(league * 100)} %</p>}
+              {!solo && (
+                <p className={`text-[11px] font-black ${gap >= 3 ? 'text-green-400' : 'text-muted'}`}>
+                  {gap >= 3 ? '▲ mieux' : gap <= -3 ? '▼ moins bien' : '= pareil'}
+                </p>
+              )}
             </div>
           )
         })}

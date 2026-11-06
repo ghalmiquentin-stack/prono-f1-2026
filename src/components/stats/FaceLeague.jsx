@@ -79,7 +79,16 @@ export default function FaceLeague({ players, me, formLength }) {
                 >
                   <span style={m.key === 'me' && on ? { color: me.color } : undefined}>{signedPoints(Math.round(m.value))}</span>
                 </button>
-                {m.key !== 'avg' && (
+                {m.key === 'avg' ? (
+                  <button
+                    onClick={() => setSelected('avg')}
+                    aria-label={label(m)}
+                    aria-pressed={on}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 w-6 h-9"
+                    style={{ left: `${pos(m.value)}%`, top: LINE, zIndex: 3 }}
+                  />
+                ) : (
+                  <>
                   <button
                     onClick={() => setSelected(m.key)}
                     aria-label={label(m)}
@@ -92,6 +101,7 @@ export default function FaceLeague({ players, me, formLength }) {
                       style={{ width: m.key === 'me' ? 16 : 14, height: m.key === 'me' ? 16 : 14, background: m.player.color }}
                     />
                   </button>
+                  </>
                 )}
               </span>
             )

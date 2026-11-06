@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import useElementWidth from '../../hooks/useElementWidth'
 import { Info } from 'lucide-react'
 import StatsCard from './StatsCard'
 import BottomSheet from '../BottomSheet'
@@ -15,14 +16,16 @@ const TRACK = '#2E2E42'
 const MUTED = '#9494AC'
 const GOLD = '#FFD700'
 const SURFACE = '#1E1E2E'
-const W = 318
+const MAX_WIDTH = 560
 const X_START = 18
-const X_END = 284
+const RIGHT_MARGIN = 34 // place du drapeau d'arrivée
+const H = 80
 const MIN_REMAINING_PX = 96 // tronçon « reste à jouer » : de quoi écrire « 150 pts à jouer »
 
 export default function TitleCard({ data }) {
   const { me, list, completed, upcoming } = data
   const [info, setInfo] = useState(false)
+  const [boxRef, boxWidth] = useElementWidth()
   const race = computeTitleRace({ list, me, remaining: upcoming.length })
   if (!race) return null
 
@@ -50,16 +53,20 @@ export default function TitleCard({ data }) {
     help = <>Pour le rattraper : <b className="text-white">+{ptsLabel(perGp)} par GP</b> de plus que lui.</>
   }
 
-  // Piste : le tronçon jusqu'à l'arrivée garde au moins MIN_REMAINING_PX pour son libellé.
-  const maxTotal = Math.max(leader.total, me.total, 1)
-  const naturalRemaining = potRelevant * ((X_END - X_START) / (maxTotal + Math.max(potRelevant, 1)))
-  const remainingPx = Math.max(MIN_REMAINING_PX, naturalRemaining)
-  const scale = (X_END - remainingPx - X_START) / maxTotal
-  const xOf = v => X_START + Math.max(0, v) * scale
+  const W = Math.min(boxWidth, MAX_WIDTH)
+  const X_END = W - RIGHT_MARGIN
+  // Piste : sa longueur suit l'avancement de la saison, pas les points. Le tronçon pointillé jusqu'à
+  // l'arrivée représente les GP restants (au moins MIN_REMAINING_PX pour écrire « 150 pts à jouer »),
+  // le premier se tient à son début. L'écart se lit à la même échelle que ce tronçon : sa longueur
+  // correspond aux points encore à jouer. Un écart plus long que la piste place le poursuivant au départ.
+  const trackLength = X_END - X_START
+  const totalGp = disputed + remaining
+  const remainingPx = Math.max(MIN_REMAINING_PX, trackLength * (remaining / totalGp))
+  const pxPerPoint = remainingPx / Math.max(potRelevant, 1)
   const ahead = isLeader ? me : leader
   const behind = isLeader ? rival : me
-  let xAhead = xOf(ahead.total)
-  let xBehind = xOf(behind.total)
+  let xAhead = X_END - remainingPx
+  let xBehind = Math.max(X_START, xAhead - gap * pxPerPoint)
   if (xAhead - xBehind < 34) {
     xBehind = Math.max(X_START, xAhead - 34)
     if (xAhead - xBehind < 34) xAhead = xBehind + 34
@@ -89,8 +96,8 @@ export default function TitleCard({ data }) {
       <p className="text-base font-black leading-snug">{headline}</p>
       <p className="text-sm text-muted leading-snug mt-0.5">{help}</p>
 
-      <div className="max-w-[560px] mx-auto">
-        <svg viewBox={`0 0 ${W} 80`} width="100%" className="mt-2" role="img" aria-label="Position des deux joueurs sur la piste vers la fin de saison">
+      <div ref={boxRef} className="mt-2">
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block mx-auto" role="img" aria-label="Position des deux joueurs sur la piste vers la fin de saison">
           <line x1={X_START} x2={X_END} y1="46" y2="46" stroke={TRACK} strokeWidth="4" strokeLinecap="round" />
           <line x1={xAhead} x2={X_END} y1="46" y2="46" stroke={decided ? GOLD : 'rgba(255,255,255,0.28)'} strokeWidth="4" strokeDasharray={decided ? '0' : '2 6'} strokeLinecap="round" />
           <text x={X_END + 4} y="52" fontSize="20">{decided ? '🏆' : '🏁'}</text>

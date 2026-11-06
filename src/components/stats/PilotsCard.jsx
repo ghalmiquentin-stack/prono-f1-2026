@@ -45,7 +45,8 @@ function buildRows(me, leagueDrivers) {
 }
 
 export default function PilotsCard({ data, drivers }) {
-  const { me, leagueDrivers } = data
+  const { me, list, leagueDrivers } = data
+  const solo = list.length < 2
   const [showAll, setShowAll] = useState(false)
   const rows = useMemo(() => buildRows(me, leagueDrivers), [me, leagueDrivers])
   if (!rows.length) return null
@@ -54,7 +55,7 @@ export default function PilotsCard({ data, drivers }) {
   const hidden = rows.length - shown.length
 
   return (
-    <StatsCard title="Mes pilotes" sub="Classés par points rapportés. La moyenne est en points par pronostic.">
+    <StatsCard title="Mes pilotes" sub={solo ? 'Classés par points rapportés.' : 'Classés par points rapportés. La moyenne est en points par pronostic.'}>
       <ol className="divide-y divide-border/60">
         {shown.map(r => (
           <li key={r.name} className="flex items-center gap-3 py-2.5">
@@ -71,7 +72,7 @@ export default function PilotsCard({ data, drivers }) {
               <p className="font-black leading-tight">{r.name} <span className="text-[11px] text-muted font-normal">{r.team}</span></p>
               <p className="text-xs text-muted leading-snug">Joué {r.count} fois</p>
               <p className="text-xs text-muted leading-snug"><b className="text-white/90 font-bold">{oneDecimal(r.perPick)}</b> pts par pronostic</p>
-              <p className="text-xs text-muted leading-snug">Moyenne de la ligue : <b className="text-white/90 font-bold">{oneDecimal(r.leaguePerPick)}</b></p>
+              {!solo && <p className="text-xs text-muted leading-snug">Moyenne de la ligue : <b className="text-white/90 font-bold">{oneDecimal(r.leaguePerPick)}</b></p>}
             </div>
             <p className="font-black text-lg tabular-nums">{r.points}<span className="text-[11px] text-muted font-normal"> pts</span></p>
           </li>
