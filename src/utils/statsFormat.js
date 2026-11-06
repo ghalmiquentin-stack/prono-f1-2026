@@ -10,3 +10,13 @@ export function rankLabel(rank, count) {
 export function oneDecimal(value) {
   return String(Math.round(value * 10) / 10).replace('.', ',')
 }
+
+// Quantile d'une liste de nombres (interpolation linéaire), q entre 0 et 1.
+export function quantile(values, q) {
+  if (!values.length) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const i = (sorted.length - 1) * q
+  const lo = Math.floor(i)
+  const hi = Math.ceil(i)
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo)
+}

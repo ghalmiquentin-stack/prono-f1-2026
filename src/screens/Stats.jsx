@@ -9,6 +9,9 @@ import SeasonCard from '../components/stats/SeasonCard'
 import ExactCard from '../components/stats/ExactCard'
 import PilotsCard from '../components/stats/PilotsCard'
 import ModsCard from '../components/stats/ModsCard'
+import TitleCard from '../components/stats/TitleCard'
+import GapCard from '../components/stats/GapCard'
+import DuelCard from '../components/stats/DuelCard'
 
 // Page Stats, en trois onglets courts :
 //   Ma forme    : ma forme du moment, ma saison ;
@@ -34,14 +37,6 @@ function StatsSkeleton() {
       <div className="skeleton h-11 w-full rounded-xl mt-4" />
       <div className="skeleton h-[330px] w-full rounded-lg" />
       <div className="skeleton h-[200px] w-full rounded-lg" />
-    </div>
-  )
-}
-
-function ComingSoon({ label }) {
-  return (
-    <div className="card p-5 text-center">
-      <p className="text-sm text-muted">{label} arrive bientôt.</p>
     </div>
   )
 }
@@ -125,7 +120,13 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
             <SeasonCard data={data} />
           </>
         )}
-        {tab === 'rivaux' && <ComingSoon label="Cet onglet" />}
+        {tab === 'rivaux' && (
+          <>
+            <TitleCard data={data} />
+            <GapCard data={data} />
+            <DuelCard data={data} />
+          </>
+        )}
         {tab === 'pronos' && (
           <>
             <ExactCard data={data} />
