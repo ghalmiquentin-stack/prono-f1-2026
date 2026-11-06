@@ -1,31 +1,46 @@
 import { useMemo, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
-import { calculateAllSeasonScores } from '../utils/scoring'
-import { getProfile, getPlayerIdentity } from '../utils/profiles'
-import { getPenaltyAmount } from '../utils/penalties'
-import { getDriverTeam, getTeamColor } from '../data/drivers'
+import { computeStatsData } from '../utils/statsData'
 import HeaderBadges from '../components/HeaderBadges'
-import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine,
-} from 'recharts'
-import Skeleton from '../components/Skeleton'
+import StatsTabs from '../components/stats/StatsTabs'
+import FormCard from '../components/stats/FormCard'
+import SeasonCard from '../components/stats/SeasonCard'
 
-function CustomTooltip({ active, payload, label }) {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-surface border border-border rounded-lg p-3 shadow-xl">
-        <p className="text-xs text-muted mb-2 font-bold">{label}</p>
-        {payload.map(entry => (
-          <p key={entry.dataKey} className="text-sm font-bold" style={{ color: entry.color }}>
-            {entry.name}: {Math.round(entry.value)} pts
-          </p>
-        ))}
+// Page Stats, en trois onglets courts :
+//   Ma forme    : ma forme du moment, ma saison ;
+//   Mes rivaux  : la course au titre, mon écart avec les autres, le duel ;
+//   Mes pronos  : mes pronostics exacts, mes pilotes, mes modifications.
+// Lecture seule : tous les points viennent de calculateAllSeasonScores (voir utils/statsData.js).
+
+const TABS = [
+  { key: 'forme', label: 'Ma forme' },
+  { key: 'rivaux', label: 'Mes rivaux' },
+  { key: 'pronos', label: 'Mes pronos' },
+]
+
+function StatsSkeleton() {
+  return (
+    <div className="px-5 pt-5 pb-4 space-y-3" aria-hidden="true">
+      <div className="flex items-center justify-between mb-2">
+        <div className="skeleton h-9 w-32 rounded-xl" />
+        <div className="skeleton h-11 w-32 rounded-xl" />
       </div>
-    )
-  }
-  return null
+      <div className="skeleton h-8 w-40 rounded" />
+      <div className="skeleton h-4 w-56 rounded" />
+      <div className="skeleton h-11 w-full rounded-xl mt-4" />
+      <div className="skeleton h-[330px] w-full rounded-lg" />
+      <div className="skeleton h-[200px] w-full rounded-lg" />
+    </div>
+  )
+}
+
+function ComingSoon({ label }) {
+  return (
+    <div className="card p-5 text-center">
+      <p className="text-sm text-muted">{label} arrive bientôt.</p>
+    </div>
+  )
 }
 
 export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueId, leagueOptions, onSwitchLeague, setActiveTab }) {
@@ -37,183 +52,19 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
   const { data: predictions, error: predictionsError } = useCollection(user ? 'predictions' : null, leagueConstraint)
   const { data: penalties, error: penaltiesError } = useCollection(user ? 'penalties' : null, leagueConstraint)
 
+  const [tab, setTab] = useState('forme')
+
   const loading = playersLoading || racesLoading
   const hasReadError = !!(playersError || racesError || predictionsError || penaltiesError)
 
-  const sortedRaces = useMemo(() =>
-    [...races].sort((a, b) => a.id - b.id),
-    [races]
+  const data = useMemo(
+    () => computeStatsData({ players, races, predictions, penalties, profiles, meId: currentPlayerId }),
+    [players, races, predictions, penalties, profiles, currentPlayerId],
   )
 
-  const completedRaces = useMemo(() =>
-    sortedRaces.filter(r => r.status === 'completed'),
-    [sortedRaces]
-  )
+  if (loading) return <StatsSkeleton />
 
-  const currentPlayerDoc = useMemo(
-    () => players.find(p => p.id === currentPlayerId),
-    [players, currentPlayerId]
-  )
-  const currentIdentity = useMemo(
-    () => getProfile(profiles, currentPlayerDoc),
-    [profiles, currentPlayerDoc]
-  )
-  const currentPlayerTotal = useMemo(() => {
-    if (!players.length) return 0
-    return calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
-      .find(p => p.id === currentPlayerId)?.total ?? 0
-  }, [players, sortedRaces, predictions, penalties, currentPlayerId])
-
-  // Real roster of the active league (already scoped via leagueConstraint
-  // above), sorted deterministically so per-player colors/avatars stay
-  // stable across renders — not a fixed table of hardcoded player IDs from
-  // the original single-league era.
-  const playerIds = useMemo(
-    () => [...players].map(p => p.id).sort(),
-    [players]
-  )
-
-  const playerStats = useMemo(() => {
-    if (!players.length) return []
-    const allScores = calculateAllSeasonScores(players, sortedRaces, predictions, penalties)
-    return playerIds.map((pid, index) => {
-      const scored = allScores.find(p => p.id === pid)
-      if (!scored) return null
-      const { total, raceScores, streakBonus } = scored
-      const pens = penalties.filter(p => p.playerId === pid)
-
-      const racesPlayed = raceScores.filter(rs => rs.net !== null).length
-      const avgScore = racesPlayed > 0 ? +(total / racesPlayed).toFixed(1) : 0
-      const perfectPodiums = raceScores.filter(rs => rs.perfectPodium).length
-      const bestScore = raceScores.reduce((best, rs) => Math.max(best, rs.net ?? 0), 0)
-      const totalPenalties = pens.reduce((s, p) => s + getPenaltyAmount(p), 0)
-      const exactHits = raceScores.reduce((s, rs) =>
-        s + Object.values(rs.details ?? {}).filter(d => d === 'exact').length, 0)
-      const podiumHits = raceScores.reduce((s, rs) =>
-        s + Object.values(rs.details ?? {}).filter(d => d === 'podium').length, 0)
-
-      let cumulative = 0
-      const cumulativeScores = raceScores.map(rs => {
-        cumulative += rs.net ?? 0
-        return { raceId: rs.raceId, name: rs.raceName, cumulative }
-      })
-
-      const identity = getPlayerIdentity(profiles, scored, index)
-
-      return {
-        ...scored,
-        color: identity.color,
-        avatar: identity.avatar,
-        displayName: identity.displayName,
-        total, raceScores, streakBonus,
-        racesPlayed, avgScore, perfectPodiums, bestScore,
-        totalPenalties, exactHits, podiumHits, cumulativeScores,
-      }
-    }).filter(Boolean)
-  }, [players, playerIds, profiles, races, predictions, penalties, sortedRaces])
-
-  // Cumulative chart data — real Y values + horizontal pixel offsets for ties
-  const cumulativeChartData = useMemo(() => {
-    return completedRaces.map(race => {
-      // Collect real values
-      const raw = {}
-      playerIds.forEach(pid => {
-        const player = playerStats.find(p => p.id === pid)
-        const cs = player?.cumulativeScores?.find(c => c.raceId === race.id)
-        raw[pid] = cs?.cumulative ?? 0
-      })
-
-      // Group by value to detect ties
-      const groups = {}
-      playerIds.forEach(pid => {
-        const v = raw[pid]
-        if (!groups[v]) groups[v] = []
-        groups[v].push(pid)
-      })
-
-      // Real Y values + per-player horizontal pixel offset stored in entry
-      const entry = { name: `GP ${race.name}` }
-      playerIds.forEach(pid => {
-        entry[pid] = raw[pid]
-        const group = groups[raw[pid]]
-        if (group.length > 1) {
-          const i = group.indexOf(pid)
-          const center = (group.length - 1) / 2
-          entry[`${pid}_xOffset`] = (i - center) * 9 // px
-        } else {
-          entry[`${pid}_xOffset`] = 0
-        }
-      })
-      return entry
-    })
-  }, [completedRaces, playerStats])
-
-  // Race scores bar chart data
-  const raceScoresChartData = useMemo(() => {
-    return completedRaces.map(race => {
-      const entry = { name: `GP ${race.name}` }
-      playerIds.forEach(pid => {
-        const player = playerStats.find(p => p.id === pid)
-        const rs = player?.raceScores?.find(r => r.raceId === race.id)
-        entry[pid] = rs?.net ?? 0
-      })
-      return entry
-    })
-  }, [completedRaces, playerIds, playerStats])
-
-  // Driver prediction stats — per-player prediction counts for tooltip
-  const driverPredictionStats = useMemo(() => {
-    const driverCounts = {}
-    const driverHits = {}
-    // { driver: { pid: count } }
-    const driverPredictorCounts = {}
-
-    completedRaces.forEach(race => {
-      if (!race.result) return
-      playerIds.forEach(pid => {
-        const pred = predictions.find(p => p.playerId === pid && p.raceId === race.id)
-        if (!pred) return
-        ;['P1', 'P2', 'P3'].forEach(pos => {
-          const driver = pred.prediction?.[pos]
-          if (!driver) return
-          driverCounts[driver] = (driverCounts[driver] ?? 0) + 1
-          if (!driverPredictorCounts[driver]) driverPredictorCounts[driver] = {}
-          driverPredictorCounts[driver][pid] = (driverPredictorCounts[driver][pid] ?? 0) + 1
-          if (pred.prediction[pos] === race.result[pos]) {
-            driverHits[driver] = (driverHits[driver] ?? 0) + 1
-          }
-        })
-      })
-    })
-
-    return Object.entries(driverCounts)
-      .map(([driver, count]) => {
-        return {
-          driver,
-          count,
-          hits: driverHits[driver] ?? 0,
-          accuracy: count > 0 ? Math.round(((driverHits[driver] ?? 0) / count) * 100) : 0,
-          team: getDriverTeam(driver)?.name ?? '',
-          teamColor: getTeamColor(driver),
-          predictorCounts: driverPredictorCounts[driver] ?? {},
-        }
-      })
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8)
-  }, [completedRaces, playerIds, predictions])
-
-  const maxDriverCount = driverPredictionStats[0]?.count || 1
-  const [activeDriver, setActiveDriver] = useState(null)
-
-  if (loading) {
-    return (
-      <div className="px-5 pt-5 space-y-4">
-        <Skeleton rows={3} height="h-40" />
-      </div>
-    )
-  }
-
-  if (completedRaces.length === 0) {
+  if (!data || !data.me) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center px-5">
         <span className="text-5xl mb-4">📊</span>
@@ -223,30 +74,31 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
     )
   }
 
+  const { me, completed, upcoming } = data
+  const remaining = upcoming.length
+
   return (
     <div className="pb-4">
-      <div className="px-5 pt-5 pb-4">
+      <div className="px-5 pt-5 pb-3">
         <HeaderBadges
           leagueName={activeLeagueName}
           leagueId={activeLeagueId}
           leagueOptions={leagueOptions}
           onSwitchLeague={onSwitchLeague}
           onManageLeagues={() => setActiveTab?.('leagues')}
-          player={{
-            avatar: String(currentIdentity?.avatar ?? '🏎️'),
-            color: String(currentIdentity?.color ?? '#6B6B8A'),
-            displayName: String(currentIdentity?.displayName ?? currentPlayerId),
-            points: currentPlayerTotal,
-          }}
+          player={{ avatar: me.avatar, color: me.color, displayName: me.name, points: me.total }}
           onOpenProfile={() => setActiveTab?.('monprofil')}
         />
-        <h1 className="text-2xl font-black tracking-tight">Statistiques</h1>
-        <p className="text-sm text-muted">{completedRaces.length} course{completedRaces.length > 1 ? 's' : ''} analysée{completedRaces.length > 1 ? 's' : ''}</p>
+        <h1 className="text-2xl font-black tracking-tight mb-1">Statistiques</h1>
+        <p className="text-sm text-muted">
+          {completed.length} course{completed.length > 1 ? 's' : ''} disputée{completed.length > 1 ? 's' : ''}
+          {' '}· {remaining} restante{remaining > 1 ? 's' : ''}
+        </p>
       </div>
 
-      {/* Read error banner — stays visible alongside whatever data did load */}
+      {/* Bannière d'erreur de lecture : reste visible à côté des données chargées */}
       {hasReadError && (
-        <div className="px-5 mb-6">
+        <div className="px-5 mb-4">
           <div className="card p-5 border-accent/40">
             <div className="flex items-start gap-3">
               <span className="text-2xl">⚠️</span>
@@ -261,256 +113,18 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
         </div>
       )}
 
-      {/* Player cards */}
-      <div className="px-5 mb-6">
-        <p className="section-title">Résumé des joueurs</p>
-        <div className="grid grid-cols-2 gap-3">
-          {playerStats.sort((a, b) => b.total - a.total).map((player, idx) => {
-            const isCurrent = player.id === currentPlayerId
-            const color = String(player.color)
-            const avatar = String(player.avatar)
-            return (
-              <div
-                key={player.id}
-                className={`card p-4 ${isCurrent ? 'ring-1' : ''} ${player.active === false ? 'opacity-60' : ''}`}
-                style={isCurrent ? { '--tw-ring-color': color, borderColor: color + '30' } : {}}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <span>{avatar}</span>
-                  <span className="font-black text-sm flex-1 truncate">{player.displayName}</span>
-                  {player.active === false && (
-                    <span className="text-[9px] font-bold uppercase tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full shrink-0">
-                      Parti
-                    </span>
-                  )}
-                  {idx === 0 && <span className="text-xs">👑</span>}
-                </div>
-                <p className="font-black text-2xl" style={{ color }}>{player.total}</p>
-                <p className="text-xs text-muted">pts totaux</p>
-                <div className="mt-3 space-y-1.5">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">Moy./course</span>
-                    <span className="font-bold">{player.avgScore}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">Exact</span>
-                    <span className="font-bold text-green-400">{player.exactHits}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">Podium ≠ pos</span>
-                    <span className="font-bold text-yellow-400">{player.podiumHits}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">⭐ Parfait</span>
-                    <span className="font-bold text-gold">{player.perfectPodiums}</span>
-                  </div>
-                  {player.totalPenalties > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted">Pénalités</span>
-                      <span className="font-bold text-accent">-{player.totalPenalties}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+      <StatsTabs tabs={TABS} value={tab} onChange={setTab} />
+
+      <div className="px-5 space-y-4 mt-1">
+        {tab === 'forme' && (
+          <>
+            <FormCard data={data} />
+            <SeasonCard data={data} />
+          </>
+        )}
+        {tab === 'rivaux' && <ComingSoon label="Cet onglet" />}
+        {tab === 'pronos' && <ComingSoon label="Cet onglet" />}
       </div>
-
-      {/* Cumulative score line chart */}
-      {cumulativeChartData.length > 0 && (
-        <div className="px-5 mb-6">
-          <p className="section-title">Évolution du classement</p>
-          <div className="card p-4" style={{ backgroundColor: '#15151E' }}>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart
-                data={cumulativeChartData}
-                margin={{ top: 5, right: 5, left: -20, bottom: 28 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#2E2E42" />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fill: '#6B6B8A', fontSize: 10 }}
-                  angle={-25}
-                  textAnchor="end"
-                  interval={0}
-                />
-                <YAxis tick={{ fill: '#6B6B8A', fontSize: 10 }} domain={['auto', 'auto']} />
-                <Tooltip content={<CustomTooltip />} />
-                {playerIds.map(pid => {
-                  const player = playerStats.find(p => p.id === pid)
-                  const color = String(player?.color)
-                  const name = String(player?.displayName)
-                  return (
-                    <Line
-                      key={pid}
-                      type="monotone"
-                      dataKey={pid}
-                      name={name}
-                      stroke={color}
-                      strokeWidth={2}
-                      dot={(dotProps) => {
-                        const xOff = dotProps.payload[`${pid}_xOffset`] ?? 0
-                        return (
-                          <circle
-                            key={dotProps.key}
-                            cx={dotProps.cx + xOff}
-                            cy={dotProps.cy}
-                            r={4}
-                            fill={color}
-                          />
-                        )
-                      }}
-                      activeDot={(dotProps) => {
-                        const xOff = dotProps.payload[`${pid}_xOffset`] ?? 0
-                        return (
-                          <circle
-                            key={dotProps.key}
-                            cx={dotProps.cx + xOff}
-                            cy={dotProps.cy}
-                            r={6}
-                            fill={color}
-                          />
-                        )
-                      }}
-                    />
-                  )
-                })}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      {/* Per-race scores bar chart — Recharts BarChart */}
-      {raceScoresChartData.length > 0 && (() => {
-        const allVals = raceScoresChartData.flatMap(e => playerIds.map(pid => e[pid] ?? 0))
-        const minVal = Math.min(0, ...allVals)
-        const maxVal = Math.max(0, ...allVals)
-        const domainMin = minVal < 0 ? minVal - 2 : 0
-        const domainMax = maxVal + 2
-        return (
-          <div className="px-5 mb-6">
-            <p className="section-title">Scores par course</p>
-            <div className="card p-4" style={{ backgroundColor: '#15151E' }}>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart
-                  data={raceScoresChartData}
-                  margin={{ top: 16, right: 5, left: -20, bottom: 28 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2E2E42" />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fill: '#6B6B8A', fontSize: 10 }}
-                    angle={-25}
-                    textAnchor="end"
-                    interval={0}
-                  />
-                  <YAxis
-                    tick={{ fill: '#6B6B8A', fontSize: 10 }}
-                    domain={[domainMin, domainMax]}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" />
-                  {playerIds.map(pid => {
-                    const player = playerStats.find(p => p.id === pid)
-                    const color = String(player?.color)
-                    return (
-                      <Bar
-                        key={pid}
-                        dataKey={pid}
-                        fill={color}
-                        name={String(player?.displayName ?? pid)}
-                        radius={[2, 2, 0, 0]}
-                        label={{
-                          content: ({ x, y, width, height, value }) => {
-                            if (!value) return null
-                            const isPos = value > 0
-                            return (
-                              <text
-                                x={x + width / 2}
-                                y={isPos ? y - 3 : y + Math.abs(height) + 10}
-                                textAnchor="middle"
-                                fill={color}
-                                fontSize={8}
-                                fontWeight="bold"
-                              >
-                                {value}
-                              </text>
-                            )
-                          },
-                        }}
-                      />
-                    )
-                  })}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )
-      })()}
-
-      {/* Driver prediction stats */}
-      {driverPredictionStats.length > 0 && (
-        <div className="px-5 mb-6">
-          <p className="section-title">Pilotes les plus pronostiqués</p>
-          <div className="card p-4 space-y-3">
-            {driverPredictionStats.map(({ driver, count, accuracy, team, teamColor, predictorCounts }) => (
-              <div key={driver} className="relative">
-                {/* Row */}
-                <div
-                  className="flex items-center gap-2 cursor-pointer select-none"
-                  onMouseEnter={() => setActiveDriver(driver)}
-                  onMouseLeave={() => setActiveDriver(null)}
-                  onClick={() => setActiveDriver(d => d === driver ? null : driver)}
-                >
-                  {/* Driver + team */}
-                  <div className="w-[90px] shrink-0">
-                    <p className="font-bold text-sm leading-tight">{driver}</p>
-                    {team && <p className="text-[9px] text-muted leading-tight">{team}</p>}
-                  </div>
-                  {/* Bar */}
-                  <div className="flex-1 h-2 bg-border rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${(count / maxDriverCount) * 100}%`, backgroundColor: teamColor }}
-                    />
-                  </div>
-                  {/* Count + accuracy */}
-                  <span className="text-xs text-muted w-5 text-right shrink-0">{count}x</span>
-                  <span className={`text-xs font-bold w-9 text-right shrink-0 ${
-                    accuracy > 50 ? 'text-green-400' : accuracy > 25 ? 'text-yellow-400' : 'text-muted'
-                  }`}>
-                    {accuracy}%
-                  </span>
-                </div>
-
-                {/* Tooltip popover */}
-                {activeDriver === driver && (
-                  <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-surface border border-border rounded-lg p-3 shadow-xl">
-                    <p className="text-[10px] text-muted font-bold uppercase tracking-wide mb-2">Pronostiqué par</p>
-                    <div className="space-y-1.5">
-                      {playerIds.filter(pid => predictorCounts[pid]).map(pid => {
-                        const p = playerStats.find(ps => ps.id === pid)
-                        const avatar = String(p?.avatar)
-                        const name = String(p?.displayName)
-                        const times = predictorCounts[pid]
-                        return (
-                          <div key={pid} className="flex items-center gap-2 text-sm">
-                            <span className="text-base leading-none">{avatar}</span>
-                            <span className="font-bold flex-1">{name}</span>
-                            <span className="text-muted text-xs">{times} fois</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

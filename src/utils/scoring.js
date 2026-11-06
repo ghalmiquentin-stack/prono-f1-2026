@@ -137,9 +137,10 @@ function calculateStreakBonusFromWins(wins) {
  * @param {Array} sortedRaces - races sorted by id
  * @param {Array} predictions
  * @param {Array} penalties
+ * @param {{ silent?: boolean }} [options] - silent: true coupe le rapport console (utile quand on recalcule plusieurs fois)
  * @returns {Array} - one entry per player: { ...player, total, raceScores, streakBonus }
  */
-export function calculateAllSeasonScores(players, sortedRaces, predictions, penalties) {
+export function calculateAllSeasonScores(players, sortedRaces, predictions, penalties, { silent = false } = {}) {
   // Step 1: per-player race scores (no streak bonus yet)
   const perPlayer = players.map(player => {
     const preds = predictions.filter(p => p.playerId === player.id)
@@ -172,31 +173,33 @@ export function calculateAllSeasonScores(players, sortedRaces, predictions, pena
     return { ...player, total: baseTotal + streakBonus, raceScores, streakBonus }
   })
 
-  // Debug log: rapport de calcul du bonus série
-  console.group('[Bonus Série] Rapport de calcul')
-  gpWinnersMap.forEach(gp => {
-    const scores = perPlayer
-      .map(pd => {
-        const rs = pd.raceScores.find(r => r.raceId === gp.raceId)
-        return `${pd.player.id}=${rs?.net ?? 'N/A'}`
-      })
-      .join(' | ')
-    console.log(`GP ${gp.raceName} → gagnant(s): [${gp.winners.join(', ')}] (max net=${gp.maxNet}) — ${scores}`)
-  })
-  const triggered = result.filter(p => p.streakBonus > 0)
-  if (triggered.length) {
-    triggered.forEach(p => console.log(`✓ Bonus série +${p.streakBonus} pts → ${p.id}`))
-  } else {
-    console.log('Aucun bonus série déclenché (< 3 victoires consécutives)')
-  }
-  result.forEach(p => {
-    const wins = completedRaces.map(race => {
-      const g = gpWinnersMap.find(g => g.raceId === race.id)
-      return g?.winners.includes(p.id) ? 'W' : 'L'
+  // Debug log: rapport de calcul du bonus série (coupé quand on recalcule l'historique, voir page Stats)
+  if (!silent) {
+    console.group('[Bonus Série] Rapport de calcul')
+    gpWinnersMap.forEach(gp => {
+      const scores = perPlayer
+        .map(pd => {
+          const rs = pd.raceScores.find(r => r.raceId === gp.raceId)
+          return `${pd.player.id}=${rs?.net ?? 'N/A'}`
+        })
+        .join(' | ')
+      console.log(`GP ${gp.raceName} → gagnant(s): [${gp.winners.join(', ')}] (max net=${gp.maxNet}) — ${scores}`)
     })
-    console.log(`  ${p.id}: [${wins.join('')}] → streakBonus=${p.streakBonus} total=${p.total}`)
-  })
-  console.groupEnd()
+    const triggered = result.filter(p => p.streakBonus > 0)
+    if (triggered.length) {
+      triggered.forEach(p => console.log(`✓ Bonus série +${p.streakBonus} pts → ${p.id}`))
+    } else {
+      console.log('Aucun bonus série déclenché (< 3 victoires consécutives)')
+    }
+    result.forEach(p => {
+      const wins = completedRaces.map(race => {
+        const g = gpWinnersMap.find(g => g.raceId === race.id)
+        return g?.winners.includes(p.id) ? 'W' : 'L'
+      })
+      console.log(`  ${p.id}: [${wins.join('')}] → streakBonus=${p.streakBonus} total=${p.total}`)
+    })
+    console.groupEnd()
+  }
 
   return result
 }
