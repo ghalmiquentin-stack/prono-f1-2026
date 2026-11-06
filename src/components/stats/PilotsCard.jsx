@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import StatsCard from './StatsCard'
+import Portrait from '../sheet/Portrait'
 import { getDriverTeam, getTeamColor } from '../../data/drivers'
 import { oneDecimal } from '../../utils/statsFormat'
 
@@ -43,7 +44,7 @@ function buildRows(me, leagueDrivers) {
   return rows
 }
 
-export default function PilotsCard({ data }) {
+export default function PilotsCard({ data, drivers }) {
   const { me, leagueDrivers } = data
   const [showAll, setShowAll] = useState(false)
   const rows = useMemo(() => buildRows(me, leagueDrivers), [me, leagueDrivers])
@@ -57,8 +58,10 @@ export default function PilotsCard({ data }) {
       <ol className="divide-y divide-border/60">
         {shown.map(r => (
           <li key={r.name} className="flex items-center gap-3 py-2.5">
-            <span className="w-5 text-center text-sm font-black text-muted">{rows.indexOf(r) + 1}</span>
-            <span className="w-1 self-stretch rounded-full" style={{ background: getTeamColor(r.name) || '#9494AC' }} />
+            <div className="relative shrink-0">
+              <Portrait drivers={drivers} name={r.name} className="w-11 h-11" ring={getTeamColor(r.name) || '#9494AC'} />
+              <span className="absolute -top-1.5 -left-1.5 min-w-[20px] h-5 px-1 rounded-full bg-bg border border-border text-[11px] font-black flex items-center justify-center">{rows.indexOf(r) + 1}</span>
+            </div>
             <div className="flex-1 min-w-0">
               {r.tags.length > 0 && (
                 <p className="text-[11px] uppercase font-bold tracking-wide flex flex-wrap gap-x-2 leading-snug">
@@ -66,12 +69,9 @@ export default function PilotsCard({ data }) {
                 </p>
               )}
               <p className="font-black leading-tight">{r.name} <span className="text-[11px] text-muted font-normal">{r.team}</span></p>
-              <p className="text-xs text-muted leading-snug">
-                Joué {r.count} fois · <b className="text-white/90 font-bold">{oneDecimal(r.perPick)}</b> pts par pronostic
-              </p>
-              <p className="text-xs text-muted leading-snug">
-                Moyenne de la ligue : <b className="text-white/90 font-bold">{oneDecimal(r.leaguePerPick)}</b>
-              </p>
+              <p className="text-xs text-muted leading-snug">Joué {r.count} fois</p>
+              <p className="text-xs text-muted leading-snug"><b className="text-white/90 font-bold">{oneDecimal(r.perPick)}</b> pts par pronostic</p>
+              <p className="text-xs text-muted leading-snug">Moyenne de la ligue : <b className="text-white/90 font-bold">{oneDecimal(r.leaguePerPick)}</b></p>
             </div>
             <p className="font-black text-lg tabular-nums">{r.points}<span className="text-[11px] text-muted font-normal"> pts</span></p>
           </li>

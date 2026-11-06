@@ -30,6 +30,17 @@ export default function FormCard({ data }) {
         </div>
       }
     >
+      <div className="mb-3 flex items-center gap-2 text-sm">
+        <Flame size={16} className={me.winStreak ? 'text-accent' : 'text-muted'} />
+        {me.winStreak > 0 ? (
+          <span>
+            <b>{me.winStreak} GP gagné{me.winStreak > 1 ? 's' : ''} d'affilée</b>{' '}
+            <span className="text-muted">· bonus à 3</span>
+          </span>
+        ) : (
+          <span className="text-muted">Pas de série en cours</span>
+        )}
+      </div>
       <ul className="flex gap-2 justify-center">
         {indexes.map(k => {
           const net = me.net[k]
@@ -57,17 +68,6 @@ export default function FormCard({ data }) {
         <span><Star size={11} className="inline text-gold fill-gold -mt-0.5" /> meilleur du GP</span>
         <span><span className="text-green-400 font-black">▲▼</span> vs moyenne de la ligue</span>
       </p>
-      <div className="mt-3 flex items-center gap-2 text-sm">
-        <Flame size={16} className={me.winStreak ? 'text-accent' : 'text-muted'} />
-        {me.winStreak > 0 ? (
-          <span>
-            <b>{me.winStreak} GP gagné{me.winStreak > 1 ? 's' : ''} d'affilée</b>{' '}
-            <span className="text-muted">· bonus à 3</span>
-          </span>
-        ) : (
-          <span className="text-muted">Pas de série en cours</span>
-        )}
-      </div>
       <div className="border-t border-border/60 mt-3 pt-3">
         <FaceLeague players={list} me={me} formLength={count} />
       </div>

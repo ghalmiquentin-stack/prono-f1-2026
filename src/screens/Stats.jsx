@@ -49,6 +49,7 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
   const { data: races, loading: racesLoading, error: racesError } = useCollection(user ? 'races' : null)
   const { data: predictions, error: predictionsError } = useCollection(user ? 'predictions' : null, leagueConstraint)
   const { data: penalties, error: penaltiesError } = useCollection(user ? 'penalties' : null, leagueConstraint)
+  const { data: drivers } = useCollection(user ? 'drivers' : null)
 
   const [tab, setTab] = useState('forme')
 
@@ -130,7 +131,7 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
         {tab === 'pronos' && (
           <>
             <ExactCard data={data} />
-            <PilotsCard data={data} />
+            <PilotsCard data={data} drivers={drivers} />
             <ModsCard data={data} />
           </>
         )}
