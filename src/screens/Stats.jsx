@@ -6,6 +6,9 @@ import HeaderBadges from '../components/HeaderBadges'
 import StatsTabs from '../components/stats/StatsTabs'
 import FormCard from '../components/stats/FormCard'
 import SeasonCard from '../components/stats/SeasonCard'
+import ExactCard from '../components/stats/ExactCard'
+import PilotsCard from '../components/stats/PilotsCard'
+import ModsCard from '../components/stats/ModsCard'
 
 // Page Stats, en trois onglets courts :
 //   Ma forme    : ma forme du moment, ma saison ;
@@ -123,7 +126,13 @@ export default function Stats({ currentPlayerId, activeLeagueName, activeLeagueI
           </>
         )}
         {tab === 'rivaux' && <ComingSoon label="Cet onglet" />}
-        {tab === 'pronos' && <ComingSoon label="Cet onglet" />}
+        {tab === 'pronos' && (
+          <>
+            <ExactCard data={data} />
+            <PilotsCard data={data} />
+            <ModsCard data={data} />
+          </>
+        )}
       </div>
     </div>
   )

@@ -3,6 +3,7 @@ import { Star } from 'lucide-react'
 import StatsCard from './StatsCard'
 import { ordinal } from '../../utils/sheetStats'
 import { signedPoints } from '../../utils/standings'
+import { oneDecimal } from '../../utils/statsFormat'
 
 // « Ma saison » : une case par GP, comparée à la moyenne de la ligue. On fait glisser le doigt
 // sur la bande pour lire chaque GP (aucune case à viser avec précision). Chaque case reste
@@ -15,7 +16,6 @@ const CELL = {
   below: { background: 'rgba(255,255,255,0.16)' },
 }
 const stateOf = (net, avg) => (net === null ? 'none' : net < 0 ? 'negative' : net > avg ? 'above' : 'below')
-const oneDecimal = v => String(Math.round(v * 10) / 10).replace('.', ',')
 
 function Legend() {
   return (

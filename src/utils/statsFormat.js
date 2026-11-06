@@ -5,3 +5,8 @@ export function rankLabel(rank, count) {
   if (count >= 20) return `Top ${Math.max(1, Math.round((rank / count) * 100))} %`
   return `${ordinal(rank)} sur ${count}`
 }
+
+// Un chiffre après la virgule, à la française : 4,8 (et 15 plutôt que 15,0).
+export function oneDecimal(value) {
+  return String(Math.round(value * 10) / 10).replace('.', ',')
+}
