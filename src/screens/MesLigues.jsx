@@ -9,8 +9,9 @@ import { getProfile } from '../utils/profiles'
 import LeaveLeagueSheet from '../components/LeaveLeagueSheet'
 import PlayerBadge from '../components/PlayerBadge'
 import Skeleton from '../components/Skeleton'
-import LeagueHead, { Pill, AdminPill } from '../components/ligues/LeagueHead'
-import LeagueDetail, { PositionLine } from '../components/ligues/LeagueDetail'
+import LeagueHead from '../components/ligues/LeagueHead'
+import LeagueDetail from '../components/ligues/LeagueDetail'
+import ActiveLeagueCard from '../components/ligues/ActiveLeagueCard'
 import AddLeagueSheet from '../components/ligues/AddLeagueSheet'
 
 const NEUTRAL_COLOR = '#6B6B8A'
@@ -149,6 +150,8 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   const [openId, setOpenId] = useState(null) // league._id de la ligue ouverte (une seule à la fois)
   const [addOpen, setAddOpen] = useState(false)
   const [query, setQuery] = useState('')
+  // Règles et options de la ligue active : null = pas encore touché (défaut : ouvert s'il n'y a qu'une ligue).
+  const [activeOptionsOverride, setActiveOptionsOverride] = useState(null)
 
   // Quand une ligue s'ouvre, on la fait défiler juste assez pour voir sa fiche en
   // entier au-dessus de la barre du bas (rien ne bouge si elle est déjà visible).
@@ -199,6 +202,7 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   }
 
   const count = myLeagues.length
+  const activeOptionsOpen = activeOptionsOverride ?? count === 1
   const searchable = count >= SEARCH_FROM
   const q = normalizeText(query.trim())
   const shownOthers = searchable && q
@@ -299,26 +303,23 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
           <>
             {activeEntry && (
               <section aria-label="Ma ligue active">
-                <p className="text-[11px] uppercase text-muted font-bold mb-2">Ma ligue active</p>
-                <h2 className="text-xl font-black leading-snug break-words">{activeEntry.league.name}</h2>
-                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-                  <Pill tone="green">Active</Pill>
-                  {activeEntry.isLeagueAdmin && <AdminPill />}
-                </div>
-                <div className="mt-3">
-                  <PositionLine entry={activeEntry} />
-                </div>
-                <div className="card p-4 mt-3">
-                  <LeagueDetail entry={activeEntry} nextRace={nextRace} hero {...detailHandlers(activeEntry)} />
-                </div>
+                <h2 className="text-xs font-black uppercase tracking-widest text-white mb-2">Ma ligue active</h2>
+                <ActiveLeagueCard
+                  entry={activeEntry}
+                  nextRace={nextRace}
+                  open={activeOptionsOpen}
+                  onToggle={() => setActiveOptionsOverride(!activeOptionsOpen)}
+                  {...detailHandlers(activeEntry)}
+                />
               </section>
             )}
 
             {otherEntries.length > 0 && (
               <section aria-label={activeEntry ? 'Mes autres ligues' : 'Mes ligues'}>
-                <p className="text-[11px] uppercase text-muted font-bold mt-6 mb-2">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white mt-6 mb-2">
                   {activeEntry ? 'Mes autres ligues' : 'Mes ligues'}
-                </p>
+                  <span className="text-muted font-bold"> · {otherEntries.length}</span>
+                </h2>
                 {searchable && (
                   <div className="relative mb-3">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />

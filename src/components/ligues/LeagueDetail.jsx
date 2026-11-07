@@ -41,32 +41,46 @@ function PlayButton({ name, onClick }) {
   )
 }
 
-// Fiche d'une ligue. `hero` : fiche de la ligue active (la position est affichée
-// au-dessus, hors de la carte). Les actions dépendent du rôle DANS cette ligue :
-// « Réglages » pour un admin de la ligue, « Quitter » pour tous.
-export default function LeagueDetail({ entry, nextRace, hero = false, onPlay, onSettings, onLeave }) {
-  const { league, isLeagueAdmin, prono } = entry
+// État du pronostic du prochain GP, avec le point d'état de l'Accueil.
+export function PronoLine({ entry, nextRace }) {
+  const { prono } = entry
+  if (!prono || !nextRace) return null
   const tone = prono === 'done' ? 'text-green-400' : prono === 'closed' ? 'text-muted' : 'text-accent'
   return (
-    <div className="space-y-4">
-      {!hero && <PositionLine entry={entry} action={<PlayButton name={league.name} onClick={onPlay} />} />}
-      {prono && nextRace && (
-        <div className={`flex items-center gap-2 text-sm font-bold ${tone}`}>
-          <StatusDot state={prono} size="w-2 h-2" />
-          <span>{nextRace.flag} GP {nextRace.name} · {PRONO_TEXT[prono]}</span>
-        </div>
-      )}
-      <div>
-        <p className="text-[11px] uppercase text-muted font-bold">Règles de la ligue</p>
-        <div className="divide-y divide-border/60">
-          {leagueRuleLines(league).map(line => (
-            <div key={line.key} className="flex items-baseline justify-between gap-3 py-1.5">
-              <span className="text-xs text-muted">{line.label}</span>
-              <span className={`text-xs font-bold text-right ${line.red ? 'text-accent' : 'text-white'}`}>{line.value}</span>
-            </div>
-          ))}
-        </div>
+    <div className={`flex items-center gap-2 text-sm font-bold ${tone}`}>
+      <StatusDot state={prono} size="w-2 h-2" />
+      <span>{nextRace.flag} GP {nextRace.name} · {PRONO_TEXT[prono]}</span>
+    </div>
+  )
+}
+
+// Règles de la ligue en trois lignes, avec les montants réels.
+export function RulesBlock({ league }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase text-muted font-bold">Règles de la ligue</p>
+      <div className="divide-y divide-border/60">
+        {leagueRuleLines(league).map(line => (
+          <div key={line.key} className="flex items-baseline justify-between gap-3 py-1.5">
+            <span className="text-xs text-muted">{line.label}</span>
+            <span className={`text-xs font-bold text-right ${line.red ? 'text-accent' : 'text-white'}`}>{line.value}</span>
+          </div>
+        ))}
       </div>
+    </div>
+  )
+}
+
+// Fiche d'une ligue NON active, ouverte dans la liste « Mes autres ligues ». Les
+// actions dépendent du rôle DANS cette ligue : « Réglages » pour un admin de la
+// ligue, « Quitter » pour tous. (La ligue active a sa propre carte : ActiveLeagueCard.)
+export default function LeagueDetail({ entry, nextRace, onPlay, onSettings, onLeave }) {
+  const { league, isLeagueAdmin } = entry
+  return (
+    <div className="space-y-4">
+      <PositionLine entry={entry} action={<PlayButton name={league.name} onClick={onPlay} />} />
+      <PronoLine entry={entry} nextRace={nextRace} />
+      <RulesBlock league={league} />
       <InviteCode league={league} />
       <div className="space-y-1 pt-1 border-t border-border">
         {isLeagueAdmin && (
