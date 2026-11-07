@@ -24,13 +24,15 @@ function sortAndRank(scores, resolveIdentity) {
   }))
 }
 
-export function computeStandings({ players, sortedRaces, predictions, penalties, resolveIdentity }) {
+// `silent` : coupe le rapport console de calculateAllSeasonScores (utile quand
+// plusieurs ligues sont calculées d'un coup, comme dans Mes ligues).
+export function computeStandings({ players, sortedRaces, predictions, penalties, resolveIdentity, silent = false }) {
   const completed = sortedRaces.filter(r => r.status === 'completed' && r.result)
   const lastRace = completed[completed.length - 1] ?? null
   if (!players.length) return { list: [], completed, lastRace }
 
   const current = sortAndRank(
-    calculateAllSeasonScores(players, sortedRaces, predictions, penalties),
+    calculateAllSeasonScores(players, sortedRaces, predictions, penalties, { silent }),
     resolveIdentity,
   )
 
@@ -39,7 +41,7 @@ export function computeStandings({ players, sortedRaces, predictions, penalties,
   let previousRank = null
   if (lastRace && completed.length > 1) {
     const before = sortAndRank(
-      calculateAllSeasonScores(players, sortedRaces.filter(r => r.id !== lastRace.id), predictions, penalties),
+      calculateAllSeasonScores(players, sortedRaces.filter(r => r.id !== lastRace.id), predictions, penalties, { silent }),
       resolveIdentity,
     )
     previousRank = new Map(before.map(p => [p.id, p.rank]))
