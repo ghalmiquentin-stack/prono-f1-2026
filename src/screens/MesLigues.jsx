@@ -1,9 +1,9 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Trophy, Plus, LogIn, ShieldCheck, User } from 'lucide-react'
+import { Trophy, Plus, LogIn, ShieldCheck, User, Search, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { useRaceTiming } from '../hooks/useRaceTiming'
-import { computeStandings } from '../utils/standings'
+import { computeStandings, normalizeText } from '../utils/standings'
 import { gapFromStandings, pronoState } from '../utils/leagueSummary'
 import { getProfile } from '../utils/profiles'
 import LeaveLeagueSheet from '../components/LeaveLeagueSheet'
@@ -14,6 +14,8 @@ import LeagueDetail, { PositionLine } from '../components/ligues/LeagueDetail'
 import AddLeagueSheet from '../components/ligues/AddLeagueSheet'
 
 const NEUTRAL_COLOR = '#6B6B8A'
+// À partir de ce nombre de ligues, un champ de recherche apparaît au-dessus des autres ligues.
+const SEARCH_FROM = 8
 
 export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLeagueId, onSelectLeague, onClearActiveLeague, addToast }) {
   const { user } = useAuth()
@@ -146,6 +148,15 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   const [leaveTarget, setLeaveTarget] = useState(null) // { profile, league, isLeagueAdmin }
   const [openId, setOpenId] = useState(null) // league._id de la ligue ouverte (une seule à la fois)
   const [addOpen, setAddOpen] = useState(false)
+  const [query, setQuery] = useState('')
+
+  // Quand une ligue s'ouvre, on la fait défiler juste assez pour voir sa fiche en
+  // entier au-dessus de la barre du bas (rien ne bouge si elle est déjà visible).
+  useEffect(() => {
+    if (!openId) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    document.getElementById(`ligue-${openId}`)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
+  }, [openId])
 
   const isSoleAdmin = (league) =>
     Array.isArray(league.adminUids) && league.adminUids.length === 1 && league.adminUids.includes(user?.uid)
@@ -188,6 +199,11 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   }
 
   const count = myLeagues.length
+  const searchable = count >= SEARCH_FROM
+  const q = normalizeText(query.trim())
+  const shownOthers = searchable && q
+    ? otherEntries.filter(({ league }) => normalizeText(league.name).includes(q))
+    : otherEntries
 
   return (
     <div className="pb-4">
@@ -303,11 +319,34 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
                 <p className="text-[11px] uppercase text-muted font-bold mt-6 mb-2">
                   {activeEntry ? 'Mes autres ligues' : 'Mes ligues'}
                 </p>
+                {searchable && (
+                  <div className="relative mb-3">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={e => setQuery(e.target.value)}
+                      placeholder="Rechercher une ligue"
+                      aria-label="Rechercher une ligue"
+                      className="w-full min-h-[44px] bg-bg border border-border rounded-xl pl-9 pr-10 text-sm placeholder:text-muted outline-none focus:border-white/30 [&::-webkit-search-cancel-button]:hidden"
+                    />
+                    {query && (
+                      <button type="button" onClick={() => setQuery('')} aria-label="Effacer la recherche" className="absolute right-0 top-0 w-11 h-11 flex items-center justify-center text-muted">
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {shownOthers.length === 0 ? (
+                  <div className="card p-4 text-center">
+                    <p className="text-sm text-muted">Aucune ligue ne correspond à « {query.trim()} ».</p>
+                  </div>
+                ) : (
                 <div className="card divide-y divide-border overflow-hidden">
-                  {otherEntries.map(entry => {
+                  {shownOthers.map(entry => {
                     const open = openId === entry.league._id
                     return (
-                      <div key={entry.league._id} className="px-4">
+                      <div key={entry.league._id} id={`ligue-${entry.league._id}`} className="px-4 scroll-mb-24">
                         <LeagueHead
                           entry={entry}
                           open={open}
@@ -327,6 +366,7 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
                     )
                   })}
                 </div>
+                )}
               </section>
             )}
           </>
