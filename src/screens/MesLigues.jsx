@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { Trophy, Plus, LogIn, ShieldCheck, User, Search, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
@@ -153,12 +153,19 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   // Règles et options de la ligue active : null = pas encore touché (défaut : ouvert s'il n'y a qu'une ligue).
   const [activeOptionsOverride, setActiveOptionsOverride] = useState(null)
 
-  // Quand une ligue s'ouvre, on la fait défiler juste assez pour voir sa fiche en
-  // entier au-dessus de la barre du bas (rien ne bouge si elle est déjà visible).
+  // La ligue ouverte se détache de la liste dans sa propre carte : React recrée donc son
+  // bouton. On remet le focus dessus (ou sur la ligne refermée), puis, à l'ouverture, on la
+  // fait défiler juste assez pour voir sa fiche en entier au-dessus de la barre du bas
+  // (rien ne bouge si elle est déjà visible).
+  const prevOpenRef = useRef(null)
   useEffect(() => {
+    const target = openId ?? prevOpenRef.current
+    prevOpenRef.current = openId
+    const el = target ? document.getElementById(`ligue-${target}`) : null
+    el?.querySelector('button[aria-expanded]')?.focus({ preventScroll: true })
     if (!openId) return
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    document.getElementById(`ligue-${openId}`)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
+    el?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
   }, [openId])
 
   const isSoleAdmin = (league) =>
@@ -208,6 +215,23 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   const shownOthers = searchable && q
     ? otherEntries.filter(({ league }) => normalizeText(league.name).includes(q))
     : otherEntries
+
+  // Liste « Mes autres ligues » : les lignes pliées forment des blocs compacts ; la ligue
+  // ouverte se détache dans sa propre carte (contour blanc fin, espace avant et après), pour
+  // qu'on voie où elle s'arrête par rapport à la suivante. Le vert reste réservé à la ligue active.
+  const openIdx = shownOthers.findIndex(({ league }) => league._id === openId)
+  const openedEntry = openIdx === -1 ? null : shownOthers[openIdx]
+  const rowsBefore = openIdx === -1 ? shownOthers : shownOthers.slice(0, openIdx)
+  const rowsAfter = openIdx === -1 ? [] : shownOthers.slice(openIdx + 1)
+  const collapsedBlock = (list) => list.length > 0 && (
+    <div className="card divide-y divide-border overflow-hidden">
+      {list.map(entry => (
+        <div key={entry.league._id} id={`ligue-${entry.league._id}`} className="px-4">
+          <LeagueHead entry={entry} open={false} onToggle={() => setOpenId(entry.league._id)} />
+        </div>
+      ))}
+    </div>
+  )
 
   return (
     <div className="pb-4">
@@ -343,30 +367,28 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
                     <p className="text-sm text-muted">Aucune ligue ne correspond à « {query.trim()} ».</p>
                   </div>
                 ) : (
-                <div className="card divide-y divide-border overflow-hidden">
-                  {shownOthers.map(entry => {
-                    const open = openId === entry.league._id
-                    return (
-                      <div key={entry.league._id} id={`ligue-${entry.league._id}`} className="px-4 scroll-mb-24">
-                        <LeagueHead
-                          entry={entry}
-                          open={open}
-                          onToggle={() => setOpenId(open ? null : entry.league._id)}
-                        />
-                        {open && (
-                          <div className="pb-4 pt-1">
-                            <LeagueDetail
-                              entry={entry}
-                              nextRace={nextRace}
-                              onPlay={() => playIn(entry)}
-                              {...detailHandlers(entry)}
-                            />
-                          </div>
-                        )}
+                  <div className="space-y-2">
+                    {collapsedBlock(rowsBefore)}
+                    {openedEntry && (
+                      <div
+                        id={`ligue-${openedEntry.league._id}`}
+                        className="card overflow-hidden ring-1 ring-white/25 bg-surfaceHigh/40 scroll-mb-24"
+                      >
+                        <div className="px-4">
+                          <LeagueHead entry={openedEntry} open onToggle={() => setOpenId(null)} />
+                        </div>
+                        <div className="px-4 pb-4 pt-1">
+                          <LeagueDetail
+                            entry={openedEntry}
+                            nextRace={nextRace}
+                            onPlay={() => playIn(openedEntry)}
+                            {...detailHandlers(openedEntry)}
+                          />
+                        </div>
                       </div>
-                    )
-                  })}
-                </div>
+                    )}
+                    {collapsedBlock(rowsAfter)}
+                  </div>
                 )}
               </section>
             )}
