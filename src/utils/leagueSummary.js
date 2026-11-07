@@ -39,3 +39,25 @@ export const PRONO_TEXT = {
   missing: 'Pas encore de prono',
   closed: 'Pas de prono',
 }
+
+// Règles d'une ligue, en trois lignes pour la fiche de Mes ligues (lecture seule).
+// Une pénalité est « active » comme côté serveur et dans qualifyingPenalty.js :
+// enabled === true et un montant numérique > 0. Sinon : « Sans pénalité ».
+export function leagueRuleLines(league) {
+  const rules = league?.rules ?? {}
+  const penalty = (rule) => {
+    const active = rule?.enabled === true && typeof rule.amount === 'number' && Number.isFinite(rule.amount) && rule.amount > 0
+    return active ? { value: `-${ptsLabel(rule.amount)}`, red: true } : { value: 'Sans pénalité', red: false }
+  }
+  const hidden = rules.hidePredictionsBeforeRace?.enabled === true
+  return [
+    { key: 'modification', label: 'Podium modifié après les qualifs', ...penalty(rules.modificationPenalty) },
+    { key: 'late', label: 'Premier prono après les qualifs', ...penalty(rules.postQualifsPenalty) },
+    { key: 'hidden', label: 'Pronos des autres joueurs', value: hidden ? "Masqués jusqu'au départ" : 'Visibles', red: false },
+  ]
+}
+
+// Texte du bouton « Partager » : invitation avec le code (et le lien de l'app).
+export function inviteShareText(league) {
+  return `Rejoins ma ligue « ${league.name} » sur Prono F1 2026 ! Code d'invitation : ${league.code}`
+}

@@ -1,7 +1,8 @@
 import { ArrowRight, Settings, LogOut } from 'lucide-react'
 import { ordinal } from '../../utils/sheetStats'
-import { gapLabel, PRONO_TEXT } from '../../utils/leagueSummary'
+import { gapLabel, leagueRuleLines, PRONO_TEXT } from '../../utils/leagueSummary'
 import StatusDot from './StatusDot'
+import InviteCode from './InviteCode'
 
 // Position sur une ligne : « 2e sur 4 joueurs · 118 pts », puis l'écart en petit.
 // `action` : bouton optionnel à droite (« Jouer ici » sur une ligue non active).
@@ -56,9 +57,17 @@ export default function LeagueDetail({ entry, nextRace, hero = false, onPlay, on
         </div>
       )}
       <div>
-        <p className="text-[11px] uppercase text-muted font-bold">Code d'invitation</p>
-        <p className="text-lg font-mono font-black tracking-widest mt-1">{league.code}</p>
+        <p className="text-[11px] uppercase text-muted font-bold">Règles de la ligue</p>
+        <div className="divide-y divide-border/60">
+          {leagueRuleLines(league).map(line => (
+            <div key={line.key} className="flex items-baseline justify-between gap-3 py-1.5">
+              <span className="text-xs text-muted">{line.label}</span>
+              <span className={`text-xs font-bold text-right ${line.red ? 'text-accent' : 'text-white'}`}>{line.value}</span>
+            </div>
+          ))}
+        </div>
       </div>
+      <InviteCode league={league} />
       <div className="space-y-1 pt-1 border-t border-border">
         {isLeagueAdmin && (
           <button
