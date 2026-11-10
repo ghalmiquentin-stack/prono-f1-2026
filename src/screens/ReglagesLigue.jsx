@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { doc, writeBatch, serverTimestamp } from 'firebase/firestore'
-import { LogOut, Trash2, Copy, Check, ChevronDown } from 'lucide-react'
+import { ChevronDown, ChevronLeft } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { db } from '../firebase'
 import { useCollection, useDocument, where, upsertDoc, deleteDocument } from '../hooks/useFirestore'
@@ -10,10 +10,10 @@ import { hasRaceStarted } from '../utils/races'
 import { getPenaltyAmount, summarizePenalties } from '../utils/penalties'
 import LeagueRulesFields from '../components/LeagueRulesFields'
 import BottomSheet from '../components/BottomSheet'
-import LeaveLeagueSheet from '../components/LeaveLeagueSheet'
 import DeleteLeagueSheet from '../components/DeleteLeagueSheet'
 import ConfirmModal from '../components/ConfirmModal'
 import Skeleton from '../components/Skeleton'
+import ReglagesHub from '../components/reglages/ReglagesHub'
 
 function formatSubmittedDate(ts) {
   if (!ts) return '—'
@@ -54,7 +54,7 @@ function formatServerEventTime(ts) {
   }
 }
 
-export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague, onClearActiveLeague, setActiveTab, addToast }) {
+export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveLeague, setActiveTab, addToast }) {
   const { user } = useAuth()
   const { data: league, loading: leagueLoading } = useDocument(user ? 'leagues' : null, leagueId)
 
@@ -71,6 +71,17 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
   )
 
   const sortedRaces = useMemo(() => [...races].sort((a, b) => a.id - b.id), [races])
+  // Prochain GP : le premier « à venir », comme l'Accueil et Mes ligues.
+  const nextRace = useMemo(() => sortedRaces.find(r => r.status === 'upcoming') ?? null, [sortedRaces])
+
+  // Écran affiché : l'entrée (hub) ou un sous-écran. Pas d'adresse propre (l'app navigue par onglets).
+  const [view, setView] = useState('hub') // 'hub' | 'suivi' | 'joueurs' | 'regles'
+  useEffect(() => { setView('hub') }, [leagueId])
+  const openView = (next, opts = {}) => {
+    if (opts.tab) setTab(opts.tab)
+    setView(next)
+    window.scrollTo?.(0, 0)
+  }
 
   const isLeagueAdmin = Array.isArray(league?.adminUids) && league.adminUids.includes(user?.uid)
   const isSoleAdmin = isLeagueAdmin && league.adminUids.length === 1
@@ -365,38 +376,9 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
     }
   }
 
-  // ── Quitter / supprimer la ligue ─────────────────────────────────────────
-  const [leaveSheetOpen, setLeaveSheetOpen] = useState(false)
+  // ── Supprimer la ligue ───────────────────────────────────────────────────
+  // (« Quitter la ligue » et le code d'invitation vivent sur Mes ligues : plus ici.)
   const [deleteSheetOpen, setDeleteSheetOpen] = useState(false)
-
-  // ── Copie du code d'invitation ───────────────────────────────────────────
-  const [codeCopied, setCodeCopied] = useState(false)
-
-  const copyInviteCode = async () => {
-    if (!league?.code) return
-    try {
-      await navigator.clipboard.writeText(league.code)
-      setCodeCopied(true)
-      addToast?.('Code copié !', 'success')
-      setTimeout(() => setCodeCopied(false), 1500)
-    } catch {
-      addToast?.('Impossible de copier le code', 'error')
-    }
-  }
-
-  const handleLeagueLeft = () => {
-    if (activeLeagueId === leagueId) {
-      const remaining = myProfiles.filter(p => p.active !== false && p.leagueId !== leagueId)
-      if (remaining.length > 0) {
-        onSelectLeague?.(remaining[0].leagueId)
-      } else {
-        onClearActiveLeague?.()
-        setActiveTab?.('leagues')
-      }
-    } else {
-      setActiveTab?.('leagues')
-    }
-  }
 
   const handleLeagueDeleted = () => {
     if (activeLeagueId === leagueId) onClearActiveLeague?.()
@@ -411,381 +393,365 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
     )
   }
 
+  const subHead = (title, sub) => (
+    <div className="px-5 pt-4 pb-3">
+      <button onClick={() => setView('hub')} className="flex items-center gap-1 text-sm font-bold text-muted -ml-1 pr-3 active:opacity-70" style={{ minHeight: 44 }}>
+        <ChevronLeft size={18} />Réglages
+      </button>
+      <h1 className="text-2xl font-black tracking-tight leading-tight">{title}</h1>
+      {sub && <p className="text-sm text-muted mt-0.5 break-words">{sub}</p>}
+    </div>
+  )
+
   return (
     <div className="pb-4">
-      <div className="px-5 pt-5 pb-4">
-        <h1 className="text-2xl font-black tracking-tight">
-          Réglages · {league?.name ?? 'Ligue'}
-        </h1>
-      </div>
+      {view === 'hub' && (
+        <ReglagesHub
+          league={league}
+          players={players}
+          predictions={predictions}
+          penalties={penalties}
+          profiles={profiles}
+          nextRace={nextRace}
+          onBack={() => setActiveTab?.('leagues')}
+          onOpen={openView}
+          onDelete={() => setDeleteSheetOpen(true)}
+          canDelete={isLeagueAdmin}
+        />
+      )}
 
-      <div className="px-5 space-y-5">
-        {/* ── Code d'invitation ── */}
-        <div className="card p-4">
-          <p className="text-xs text-muted font-bold uppercase tracking-wide mb-1.5">Code d'invitation</p>
-          <div className="flex items-center gap-2">
-            <p className="font-mono font-black tracking-widest text-lg flex-1">{league?.code}</p>
-            <button
-              onClick={copyInviteCode}
-              className="p-1.5 rounded-lg text-muted hover:text-white transition-colors"
-              aria-label="Copier le code d'invitation"
-            >
-              {codeCopied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
-            </button>
-          </div>
-        </div>
-
-        {/* ── Nom de la ligue ── */}
-        {isLeagueAdmin && (
-          <div className="card p-5 space-y-3">
-            <p className="section-title">Nom de la ligue</p>
-            <input
-              type="text"
-              value={nameDraft}
-              onChange={e => setNameDraft(e.target.value)}
-              className="input-field"
-              maxLength={30}
-              placeholder="Nom de la ligue"
-            />
-            <button
-              onClick={saveLeagueName}
-              disabled={nameInvalid || !nameChanged || savingName}
-              className={`w-full py-3.5 rounded-xl font-black text-base transition-all active:scale-95 ${
-                !nameInvalid && nameChanged && !savingName
-                  ? 'bg-accent text-white shadow-glow-red'
-                  : 'bg-surfaceHigh text-muted cursor-not-allowed'
-              }`}
-            >
-              {savingName ? 'Enregistrement…' : 'Enregistrer'}
-            </button>
-          </div>
-        )}
-
-        {/* ── Règles ── */}
-        <div className="card p-5 space-y-4">
-          <p className="section-title">Règles de la ligue</p>
-
-          <LeagueRulesFields
-            modEnabled={modEnabled} setModEnabled={setModEnabled}
-            modAmount={modAmount} setModAmount={setModAmount} modAmountInvalid={modAmountInvalid}
-            postQualEnabled={postQualEnabled} setPostQualEnabled={setPostQualEnabled}
-            postQualAmount={postQualAmount} setPostQualAmount={setPostQualAmount} postQualAmountInvalid={postQualAmountInvalid}
-            hideEnabled={hideEnabled} setHideEnabled={setHideEnabled}
-          />
-
-          <button
-            onClick={saveRules}
-            disabled={rulesHaveError || savingRules}
-            className={`w-full py-3.5 rounded-xl font-black text-base transition-all active:scale-95 ${
-              !rulesHaveError && !savingRules
-                ? 'bg-accent text-white shadow-glow-red'
-                : 'bg-surfaceHigh text-muted cursor-not-allowed'
-            }`}
-          >
-            {savingRules ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
-        </div>
-
-        {/* ── Joueurs de la ligue ── */}
-        <div className="card p-5 space-y-3">
-          <p className="section-title">Joueurs de la ligue</p>
-          <div className="space-y-2">
-            {players.map(player => {
-              const identity = getProfile(profiles, player)
-              const avatar = String(identity?.avatar ?? '🏎️')
-              const color = String(identity?.color ?? '#6B6B8A')
-              const displayName = String(identity?.displayName ?? player.id)
-              const isSelf = player._id === myActiveProfile?._id
-              const isPlayerAdmin = !!player.authUid
-                && Array.isArray(league?.adminUids)
-                && league.adminUids.includes(player.authUid)
-              const isActive = player.active !== false
-              const isBanned = player.banned === true
-              return (
-                <div
-                  key={player._id}
-                  className={`flex items-center gap-3 p-2 rounded-lg bg-surfaceHigh/30 ${isActive ? '' : 'opacity-60'}`}
+      {view === 'regles' && (
+        <>
+          {subHead('Règles')}
+          <div className="px-5 space-y-5">
+            {/* ── Nom de la ligue ── */}
+            {isLeagueAdmin && (
+              <div className="card p-5 space-y-3">
+                <p className="section-title">Nom de la ligue</p>
+                <input
+                  type="text"
+                  value={nameDraft}
+                  onChange={e => setNameDraft(e.target.value)}
+                  className="input-field"
+                  maxLength={30}
+                  placeholder="Nom de la ligue"
+                />
+                <button
+                  onClick={saveLeagueName}
+                  disabled={nameInvalid || !nameChanged || savingName}
+                  className={`w-full py-3.5 rounded-xl font-black text-base transition-all active:scale-95 ${
+                    !nameInvalid && nameChanged && !savingName
+                      ? 'bg-accent text-white shadow-glow-red'
+                      : 'bg-surfaceHigh text-muted cursor-not-allowed'
+                  }`}
                 >
-                  <span className="text-xl leading-none">{avatar}</span>
-                  <span className="flex-1 font-bold text-sm truncate" style={{ color }}>
-                    {displayName}
-                    {isSelf && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
-                    {isPlayerAdmin && <span className="text-xs text-accent font-normal ml-1">· admin</span>}
-                    {!isActive && (
-                      <span className={`text-xs font-normal ml-1 ${isBanned ? 'text-red-400' : 'text-muted'}`}>
-                        · {isBanned ? 'Banni' : 'Parti'}
-                      </span>
-                    )}
-                  </span>
-                  {isLeagueAdmin && !isSelf && isPlayerAdmin && !isSoleAdmin && (
-                    <button
-                      onClick={() => demoteAdmin(player)}
-                      className="text-xs font-bold text-muted px-3 py-1.5 rounded-lg border border-border hover:bg-surfaceHigh transition-colors shrink-0"
-                    >
-                      Démettre
-                    </button>
-                  )}
-                  {isLeagueAdmin && !isSelf && !isPlayerAdmin && player.authUid && isActive && (
-                    <button
-                      onClick={() => promoteToAdmin(player)}
-                      className="text-xs font-bold text-accent px-3 py-1.5 rounded-lg border border-accent/30 hover:bg-accent/10 transition-colors shrink-0"
-                    >
-                      Nommer admin
-                    </button>
-                  )}
-                  {isLeagueAdmin && !isSelf && isActive && (
-                    <button
-                      onClick={() => openRemoveSheet(player)}
-                      className="text-xs font-bold text-red-400 px-3 py-1.5 rounded-lg border border-red-700/30 hover:bg-red-900/20 transition-colors shrink-0"
-                    >
-                      Retirer
-                    </button>
-                  )}
-                  {isLeagueAdmin && !isSelf && !isBanned && (
-                    <button
-                      onClick={() => openBanSheet(player)}
-                      className="text-xs font-bold text-white bg-red-700 px-3 py-1.5 rounded-lg hover:bg-red-600 transition-colors shrink-0"
-                    >
-                      Bannir
-                    </button>
-                  )}
-                  {isLeagueAdmin && !isSelf && isBanned && (
-                    <button
-                      onClick={() => reinstatePlayer(player)}
-                      className="text-xs font-bold text-accent px-3 py-1.5 rounded-lg border border-accent/30 hover:bg-accent/10 transition-colors shrink-0"
-                    >
-                      Réintégrer
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+                  {savingName ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+              </div>
+            )}
 
-        {/* ── Onglets Pronos / Pénalités ── */}
-        <div>
-          <div className="flex gap-2 bg-surfaceHigh rounded-xl p-1 mb-4">
-            {[
-              { id: 'pronos', label: 'Pronos' },
-              { id: 'penalties', label: 'Pénalités' },
-            ].map(t => (
+            {/* ── Règles ── */}
+            <div className="card p-5 space-y-4">
+              <p className="section-title">Règles de la ligue</p>
+
+              <LeagueRulesFields
+                modEnabled={modEnabled} setModEnabled={setModEnabled}
+                modAmount={modAmount} setModAmount={setModAmount} modAmountInvalid={modAmountInvalid}
+                postQualEnabled={postQualEnabled} setPostQualEnabled={setPostQualEnabled}
+                postQualAmount={postQualAmount} setPostQualAmount={setPostQualAmount} postQualAmountInvalid={postQualAmountInvalid}
+                hideEnabled={hideEnabled} setHideEnabled={setHideEnabled}
+              />
+
               <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  tab === t.id ? 'bg-accent text-white' : 'text-muted'
+                onClick={saveRules}
+                disabled={rulesHaveError || savingRules}
+                className={`w-full py-3.5 rounded-xl font-black text-base transition-all active:scale-95 ${
+                  !rulesHaveError && !savingRules
+                    ? 'bg-accent text-white shadow-glow-red'
+                    : 'bg-surfaceHigh text-muted cursor-not-allowed'
                 }`}
               >
-                {t.label}
+                {savingRules ? 'Enregistrement…' : 'Enregistrer'}
               </button>
-            ))}
-          </div>
-
-          {tab === 'pronos' && (
-            <div className="space-y-3">
-              {sortedRaces
-                .filter(r => r.status === 'completed' || predictions.some(p => p.raceId === r.id))
-                .map(race => {
-                  const racePreds = predictions.filter(p => p.raceId === race.id)
-                  if (!racePreds.length) return null
-                  // Same league rule as Accueil — lifts automatically once
-                  // the GP has actually started, no admin exemption.
-                  const hideActive = !!league?.rules?.hidePredictionsBeforeRace?.enabled && !hasRaceStarted(race)
-                  return (
-                    <div key={race.id} className="card p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <span>{race.flag}</span>
-                        <p className="font-bold text-sm">GP {race.name}</p>
-                        <span className={`text-xs font-bold ml-auto px-2 py-0.5 rounded-full ${
-                          race.status === 'cancelled' ? 'bg-red-500/20 text-red-400' :
-                          race.status === 'completed' ? 'bg-muted/20 text-muted' : 'bg-accent/20 text-accent'
-                        }`}>
-                          {race.status === 'cancelled' ? 'Annulé' : race.status === 'completed' ? 'Terminé' : 'À venir'}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {players.map(player => {
-                          const identity = getProfile(profiles, player)
-                          const avatar = String(identity?.avatar ?? '🏎️')
-                          const color = String(identity?.color ?? '#6B6B8A')
-                          const pred = racePreds.find(p => p.playerId === player.id)
-                          if (!pred) return (
-                            <div key={player.id} className="flex items-center gap-2 py-1 opacity-40">
-                              <span className="text-sm">{avatar}</span>
-                              <span className="text-xs text-muted flex-1">
-                                {identity?.displayName ?? player.id} — pas de prono
-                              </span>
-                            </div>
-                          )
-                          const penaltySummary = summarizePenalties(penalties, player.id, race.id)
-                          return (
-                            <div key={player.id} className="flex items-center gap-2 py-1">
-                              <span className="text-sm">{avatar}</span>
-                              <span className="text-xs font-bold flex-1" style={{ color }}>
-                                {identity?.displayName ?? player.id}
-                              </span>
-                              {hideActive ? (
-                                <span className="text-xs text-muted text-right">
-                                  Soumis {formatSubmittedDate(pred.submittedAt)}
-                                  {penaltySummary.label ? <> · {penaltySummary.label}</> : null}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-muted">
-                                  {pred.prediction?.P1} · {pred.prediction?.P2} · {pred.prediction?.P3}
-                                </span>
-                              )}
-                              <button
-                                onClick={() => toggleManualUnlock(pred)}
-                                title={pred.manualUnlockOverride
-                                  ? 'Déverrouillage exceptionnel actif — cliquer pour revenir au verrouillage normal'
-                                  : 'Verrouillage normal — cliquer pour activer le déverrouillage exceptionnel'}
-                                className={`text-xs px-2 py-1 rounded font-bold ml-1 ${
-                                  pred.manualUnlockOverride ? 'bg-green-500/20 text-green-400' : 'bg-surfaceHigh text-muted'
-                                }`}
-                              >
-                                {pred.manualUnlockOverride ? '🔓' : '🔒'}
-                              </button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
             </div>
-          )}
+          </div>
+        </>
+      )}
 
-          {tab === 'penalties' && (
-            <div className="space-y-3">
-              <button
-                onClick={() => setPenaltySheetOpen(true)}
-                className="w-full btn-primary text-center"
-              >
-                + Ajouter une pénalité
-              </button>
-              {players.length === 0 ? (
-                <div className="text-center py-10 text-muted">
-                  <span className="text-4xl block mb-3">✅</span>
-                  <p className="font-bold">Aucune pénalité</p>
-                </div>
-              ) : (
-                players.map(player => {
+      {view === 'joueurs' && (
+        <>
+          {subHead('Joueurs')}
+          <div className="px-5 space-y-5">
+            {/* ── Joueurs de la ligue ── */}
+            <div className="card p-5 space-y-3">
+              <p className="section-title">Joueurs de la ligue</p>
+              <div className="space-y-2">
+                {players.map(player => {
                   const identity = getProfile(profiles, player)
                   const avatar = String(identity?.avatar ?? '🏎️')
+                  const color = String(identity?.color ?? '#6B6B8A')
                   const displayName = String(identity?.displayName ?? player.id)
-                  const playerPenalties = penalties.filter(p => p.playerId === player.id)
-                  const count = playerPenalties.length
-                  const total = playerPenalties.reduce((sum, p) => sum + getPenaltyAmount(p), 0)
-                  const hasPenalties = count > 0
-                  const isExpanded = expandedPenaltyPlayer === player.id
-
+                  const isSelf = player._id === myActiveProfile?._id
+                  const isPlayerAdmin = !!player.authUid
+                    && Array.isArray(league?.adminUids)
+                    && league.adminUids.includes(player.authUid)
+                  const isActive = player.active !== false
+                  const isBanned = player.banned === true
                   return (
-                    <div key={player.id} className="card overflow-hidden">
-                      <button
-                        onClick={() => hasPenalties && setExpandedPenaltyPlayer(isExpanded ? null : player.id)}
-                        disabled={!hasPenalties}
-                        className={`w-full flex items-center gap-3 p-3 text-left transition-colors ${
-                          hasPenalties ? 'hover:bg-surfaceHigh/50' : 'opacity-50 cursor-default'
-                        }`}
-                      >
-                        <span>{avatar}</span>
-                        <div className="flex-1">
-                          <p className="font-bold text-sm">{displayName}</p>
-                          <p className="text-xs text-muted">
-                            {count} pénalité{count > 1 ? 's' : ''} · {total > 0 ? `-${total}` : '0'} pt{total > 1 ? 's' : ''}
-                          </p>
-                        </div>
-                        {hasPenalties && (
-                          <ChevronDown
-                            size={16}
-                            className={`text-muted shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-                          />
+                    <div
+                      key={player._id}
+                      className={`flex items-center gap-3 p-2 rounded-lg bg-surfaceHigh/30 ${isActive ? '' : 'opacity-60'}`}
+                    >
+                      <span className="text-xl leading-none">{avatar}</span>
+                      <span className="flex-1 font-bold text-sm truncate" style={{ color }}>
+                        {displayName}
+                        {isSelf && <span className="text-xs text-muted font-normal ml-1">(vous)</span>}
+                        {isPlayerAdmin && <span className="text-xs text-accent font-normal ml-1">· admin</span>}
+                        {!isActive && (
+                          <span className={`text-xs font-normal ml-1 ${isBanned ? 'text-red-400' : 'text-muted'}`}>
+                            · {isBanned ? 'Banni' : 'Parti'}
+                          </span>
                         )}
-                      </button>
-
-                      {isExpanded && hasPenalties && (
-                        <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border">
-                          {playerPenalties.map(pen => {
-                            const race = races.find(r => r.id === pen.raceId)
-                            const isAuto = pen.source === 'auto'
-                            const serverTimeLabel = isAuto ? formatServerEventTime(pen.eventTime) : null
-                            const createdAtLabel = serverTimeLabel ? null : formatPenaltyDate(pen.createdAt)
-                            return (
-                              <div key={pen._id} className="flex items-center gap-3 pt-2">
-                                <p className="text-xs text-muted flex-1">
-                                  GP {race?.name ?? pen.raceId} · {pen.type === 'late' ? 'Tardif' : 'Modification'}
-                                  {isAuto && (
-                                    <span className="ml-1.5 text-[9px] font-bold tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full">
-                                      auto
-                                    </span>
-                                  )}
-                                  {serverTimeLabel && ` · ${serverTimeLabel}`}
-                                  {createdAtLabel && ` · ${createdAtLabel}`}
-                                </p>
-                                <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                                  pen.type === 'late' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'
-                                }`}>
-                                  -{getPenaltyAmount(pen)}
-                                </span>
-                                <button
-                                  onClick={() => setDeletePenaltyTarget(pen._id)}
-                                  className="text-muted text-sm p-1 hover:text-white transition-colors"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
+                      </span>
+                      {isLeagueAdmin && !isSelf && isPlayerAdmin && !isSoleAdmin && (
+                        <button
+                          onClick={() => demoteAdmin(player)}
+                          className="text-xs font-bold text-muted px-3 py-1.5 rounded-lg border border-border hover:bg-surfaceHigh transition-colors shrink-0"
+                        >
+                          Démettre
+                        </button>
+                      )}
+                      {isLeagueAdmin && !isSelf && !isPlayerAdmin && player.authUid && isActive && (
+                        <button
+                          onClick={() => promoteToAdmin(player)}
+                          className="text-xs font-bold text-accent px-3 py-1.5 rounded-lg border border-accent/30 hover:bg-accent/10 transition-colors shrink-0"
+                        >
+                          Nommer admin
+                        </button>
+                      )}
+                      {isLeagueAdmin && !isSelf && isActive && (
+                        <button
+                          onClick={() => openRemoveSheet(player)}
+                          className="text-xs font-bold text-red-400 px-3 py-1.5 rounded-lg border border-red-700/30 hover:bg-red-900/20 transition-colors shrink-0"
+                        >
+                          Retirer
+                        </button>
+                      )}
+                      {isLeagueAdmin && !isSelf && !isBanned && (
+                        <button
+                          onClick={() => openBanSheet(player)}
+                          className="text-xs font-bold text-white bg-red-700 px-3 py-1.5 rounded-lg hover:bg-red-600 transition-colors shrink-0"
+                        >
+                          Bannir
+                        </button>
+                      )}
+                      {isLeagueAdmin && !isSelf && isBanned && (
+                        <button
+                          onClick={() => reinstatePlayer(player)}
+                          className="text-xs font-bold text-accent px-3 py-1.5 rounded-lg border border-accent/30 hover:bg-accent/10 transition-colors shrink-0"
+                        >
+                          Réintégrer
+                        </button>
                       )}
                     </div>
                   )
-                })
+                })}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {view === 'suivi' && (
+        <>
+          {subHead('Suivi des GP')}
+          <div className="px-5 space-y-5">
+            {/* ── Onglets Pronos / Pénalités ── */}
+            <div>
+              <div className="flex gap-2 bg-surfaceHigh rounded-xl p-1 mb-4">
+                {[
+                  { id: 'pronos', label: 'Pronos' },
+                  { id: 'penalties', label: 'Pénalités' },
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTab(t.id)}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      tab === t.id ? 'bg-accent text-white' : 'text-muted'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {tab === 'pronos' && (
+                <div className="space-y-3">
+                  {sortedRaces
+                    .filter(r => r.status === 'completed' || predictions.some(p => p.raceId === r.id))
+                    .map(race => {
+                      const racePreds = predictions.filter(p => p.raceId === race.id)
+                      if (!racePreds.length) return null
+                      // Same league rule as Accueil — lifts automatically once
+                      // the GP has actually started, no admin exemption.
+                      const hideActive = !!league?.rules?.hidePredictionsBeforeRace?.enabled && !hasRaceStarted(race)
+                      return (
+                        <div key={race.id} className="card p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <span>{race.flag}</span>
+                            <p className="font-bold text-sm">GP {race.name}</p>
+                            <span className={`text-xs font-bold ml-auto px-2 py-0.5 rounded-full ${
+                              race.status === 'cancelled' ? 'bg-red-500/20 text-red-400' :
+                              race.status === 'completed' ? 'bg-muted/20 text-muted' : 'bg-accent/20 text-accent'
+                            }`}>
+                              {race.status === 'cancelled' ? 'Annulé' : race.status === 'completed' ? 'Terminé' : 'À venir'}
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {players.map(player => {
+                              const identity = getProfile(profiles, player)
+                              const avatar = String(identity?.avatar ?? '🏎️')
+                              const color = String(identity?.color ?? '#6B6B8A')
+                              const pred = racePreds.find(p => p.playerId === player.id)
+                              if (!pred) return (
+                                <div key={player.id} className="flex items-center gap-2 py-1 opacity-40">
+                                  <span className="text-sm">{avatar}</span>
+                                  <span className="text-xs text-muted flex-1">
+                                    {identity?.displayName ?? player.id} — pas de prono
+                                  </span>
+                                </div>
+                              )
+                              const penaltySummary = summarizePenalties(penalties, player.id, race.id)
+                              return (
+                                <div key={player.id} className="flex items-center gap-2 py-1">
+                                  <span className="text-sm">{avatar}</span>
+                                  <span className="text-xs font-bold flex-1" style={{ color }}>
+                                    {identity?.displayName ?? player.id}
+                                  </span>
+                                  {hideActive ? (
+                                    <span className="text-xs text-muted text-right">
+                                      Soumis {formatSubmittedDate(pred.submittedAt)}
+                                      {penaltySummary.label ? <> · {penaltySummary.label}</> : null}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-muted">
+                                      {pred.prediction?.P1} · {pred.prediction?.P2} · {pred.prediction?.P3}
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => toggleManualUnlock(pred)}
+                                    title={pred.manualUnlockOverride
+                                      ? 'Déverrouillage exceptionnel actif — cliquer pour revenir au verrouillage normal'
+                                      : 'Verrouillage normal — cliquer pour activer le déverrouillage exceptionnel'}
+                                    className={`text-xs px-2 py-1 rounded font-bold ml-1 ${
+                                      pred.manualUnlockOverride ? 'bg-green-500/20 text-green-400' : 'bg-surfaceHigh text-muted'
+                                    }`}
+                                  >
+                                    {pred.manualUnlockOverride ? '🔓' : '🔒'}
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+              )}
+
+              {tab === 'penalties' && (
+                <div className="space-y-3">
+                  <button
+                    onClick={() => setPenaltySheetOpen(true)}
+                    className="w-full btn-primary text-center"
+                  >
+                    + Ajouter une pénalité
+                  </button>
+                  {players.length === 0 ? (
+                    <div className="text-center py-10 text-muted">
+                      <span className="text-4xl block mb-3">✅</span>
+                      <p className="font-bold">Aucune pénalité</p>
+                    </div>
+                  ) : (
+                    players.map(player => {
+                      const identity = getProfile(profiles, player)
+                      const avatar = String(identity?.avatar ?? '🏎️')
+                      const displayName = String(identity?.displayName ?? player.id)
+                      const playerPenalties = penalties.filter(p => p.playerId === player.id)
+                      const count = playerPenalties.length
+                      const total = playerPenalties.reduce((sum, p) => sum + getPenaltyAmount(p), 0)
+                      const hasPenalties = count > 0
+                      const isExpanded = expandedPenaltyPlayer === player.id
+
+                      return (
+                        <div key={player.id} className="card overflow-hidden">
+                          <button
+                            onClick={() => hasPenalties && setExpandedPenaltyPlayer(isExpanded ? null : player.id)}
+                            disabled={!hasPenalties}
+                            className={`w-full flex items-center gap-3 p-3 text-left transition-colors ${
+                              hasPenalties ? 'hover:bg-surfaceHigh/50' : 'opacity-50 cursor-default'
+                            }`}
+                          >
+                            <span>{avatar}</span>
+                            <div className="flex-1">
+                              <p className="font-bold text-sm">{displayName}</p>
+                              <p className="text-xs text-muted">
+                                {count} pénalité{count > 1 ? 's' : ''} · {total > 0 ? `-${total}` : '0'} pt{total > 1 ? 's' : ''}
+                              </p>
+                            </div>
+                            {hasPenalties && (
+                              <ChevronDown
+                                size={16}
+                                className={`text-muted shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                              />
+                            )}
+                          </button>
+
+                          {isExpanded && hasPenalties && (
+                            <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border">
+                              {playerPenalties.map(pen => {
+                                const race = races.find(r => r.id === pen.raceId)
+                                const isAuto = pen.source === 'auto'
+                                const serverTimeLabel = isAuto ? formatServerEventTime(pen.eventTime) : null
+                                const createdAtLabel = serverTimeLabel ? null : formatPenaltyDate(pen.createdAt)
+                                return (
+                                  <div key={pen._id} className="flex items-center gap-3 pt-2">
+                                    <p className="text-xs text-muted flex-1">
+                                      GP {race?.name ?? pen.raceId} · {pen.type === 'late' ? 'Tardif' : 'Modification'}
+                                      {isAuto && (
+                                        <span className="ml-1.5 text-[9px] font-bold tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full">
+                                          auto
+                                        </span>
+                                      )}
+                                      {serverTimeLabel && ` · ${serverTimeLabel}`}
+                                      {createdAtLabel && ` · ${createdAtLabel}`}
+                                    </p>
+                                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                                      pen.type === 'late' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'
+                                    }`}>
+                                      -{getPenaltyAmount(pen)}
+                                    </span>
+                                    <button
+                                      onClick={() => setDeletePenaltyTarget(pen._id)}
+                                      className="text-muted text-sm p-1 hover:text-white transition-colors"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
-
-        {/* ── ZONE DANGEREUSE ── */}
-        <div
-          className="rounded-2xl border p-4 space-y-3"
-          style={{ backgroundColor: 'rgba(127,0,0,0.12)', borderColor: 'rgba(200,0,0,0.25)' }}
-        >
-          <p className="text-xs font-black uppercase tracking-widest text-red-400">⚠️ Zone Dangereuse</p>
-
-          <button
-            onClick={() => setLeaveSheetOpen(true)}
-            disabled={isSoleAdmin}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${
-              isSoleAdmin
-                ? 'border-border bg-surfaceHigh/30 opacity-50 cursor-not-allowed'
-                : 'border-red-700/30 bg-red-900/20 active:opacity-70'
-            }`}
-          >
-            <LogOut size={20} className="text-red-400 shrink-0" />
-            <div>
-              <p className="font-bold text-sm text-red-400">Quitter la ligue</p>
-              <p className="text-xs text-muted">
-                {isSoleAdmin ? "Tu es l'unique administrateur, tu ne peux pas quitter" : 'Ton historique reste visible'}
-              </p>
-            </div>
-          </button>
-
-          {isLeagueAdmin && (
-            <button
-              onClick={() => setDeleteSheetOpen(true)}
-              className="w-full flex items-center gap-3 p-3 rounded-xl border border-red-700/30 bg-red-900/20 active:opacity-70 text-left"
-            >
-              <Trash2 size={20} className="text-red-400 shrink-0" />
-              <div>
-                <p className="font-bold text-sm text-red-400">Supprimer la ligue</p>
-                <p className="text-xs text-muted">Supprime tout — irréversible</p>
-              </div>
-            </button>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
 
       <BottomSheet isOpen={!!removeTarget} onClose={closeRemoveSheet} title="Retirer ce joueur ?">
         <div className="p-5 pb-10 space-y-4">
@@ -859,14 +825,6 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onSelectLeague
           </div>
         </div>
       </BottomSheet>
-
-      <LeaveLeagueSheet
-        isOpen={leaveSheetOpen}
-        onClose={() => setLeaveSheetOpen(false)}
-        profileId={myActiveProfile?._id}
-        isSoleAdmin={isSoleAdmin}
-        onLeft={handleLeagueLeft}
-      />
 
       <DeleteLeagueSheet
         isOpen={deleteSheetOpen}

@@ -280,7 +280,6 @@ export default function App() {
           <ReglagesLigue
             leagueId={selectedLeagueId}
             activeLeagueId={effectiveActiveLeagueId}
-            onSelectLeague={selectActiveLeague}
             onClearActiveLeague={clearActiveLeague}
             setActiveTab={setActiveTab}
             addToast={addToast}
