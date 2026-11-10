@@ -527,6 +527,11 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
         league={league}
         onDeleted={handleLeagueDeleted}
         addToast={addToast}
+        counts={{
+          players: players.filter(p => p.active !== false).length,
+          races: new Set(predictions.map(p => p.raceId)).size,
+          penalties: penalties.length,
+        }}
       />
 
       <ConfirmModal
