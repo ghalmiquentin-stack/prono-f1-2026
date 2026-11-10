@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, Timer, RefreshCw, Search, X } from 'lucide-react'
 import BottomSheet from '../BottomSheet'
 import StatusDot from '../ligues/StatusDot'
-import FicheJoueurGP from './FicheJoueurGP'
+import FicheJoueurGP, { describeProno, formatPenaltyWhen } from './FicheJoueurGP'
+import { AddPenaltyZone, ConfirmPenalty, ruleAmount } from './PenaltyActions'
 import { getProfile } from '../../utils/profiles'
-import { summarizePenalties } from '../../utils/penalties'
+import { summarizePenalties, getPenaltyAmount } from '../../utils/penalties'
 import { hasRaceStarted } from '../../utils/races'
 import { driverCode } from '../../utils/sheetStats'
 import { normalizeText } from '../../utils/standings'
@@ -15,8 +16,8 @@ const NEUTRAL_COLOR = '#6B6B8A'
 const SEARCH_FROM = 8
 
 // Écran « Suivi des GP » (maquette validée) : rangée de GP, trois filtres, recherche, une ligne par joueur.
-// Toucher une ligne ouvre la fiche du joueur pour ce GP. Lecture seule ici ; les actions de l'admin
-// (pénalités) arrivent par `renderActions` / `onRemovePenalty`.
+// Toucher une ligne ouvre la fiche du joueur pour ce GP. L'admin y ajoute ou retire une pénalité
+// (`onAddPenalty` / `onRemovePenalty` renvoient { ok, error } ; les écritures restent dans ReglagesLigue).
 
 function RaceStrip({ races, selected, onSelect }) {
   const ref = useRef(null)
@@ -116,12 +117,13 @@ function Row({ p, sub, pens, dot, onOpen }) {
 
 export default function ReglagesSuivi({
   league, players, predictions, penalties, profiles, races, drivers,
-  initialRaceId, initialFilter = 'all', onBack, onRemovePenalty, renderActions,
+  initialRaceId, initialFilter = 'all', onBack, canManage = false, onAddPenalty, onRemovePenalty,
 }) {
   const [raceId, setRaceId] = useState(initialRaceId)
   const [filter, setFilter] = useState(initialFilter)
   const [query, setQuery] = useState('')
   const [openPlayerId, setOpenPlayerId] = useState(null)
+  const [confirm, setConfirm] = useState(null) // { kind: 'add', type } | { kind: 'remove', pen }
 
   const race = races.find(r => r.id === raceId) ?? races[0] ?? null
 
@@ -223,7 +225,8 @@ export default function ReglagesSuivi({
         </div>
       </div>
 
-      <BottomSheet isOpen={!!openPlayer} onClose={() => setOpenPlayerId(null)} title="Détail">
+      {/* La fiche et la confirmation se relaient : la confirmation remplace la fiche, Annuler la ramène */}
+      <BottomSheet isOpen={!!openPlayer && !confirm} onClose={() => setOpenPlayerId(null)} title="Détail">
         {openPlayer && (
           <FicheJoueurGP
             player={openPlayer}
@@ -232,10 +235,40 @@ export default function ReglagesSuivi({
             penalties={penalties}
             drivers={drivers}
             hidden={hidden}
-            onRemovePenalty={onRemovePenalty}
+            onRemovePenalty={canManage ? (pen) => setConfirm({ kind: 'remove', pen }) : undefined}
           >
-            {renderActions?.({ player: openPlayer, race, pred: predOf(openPlayer.id), close: () => setOpenPlayerId(null) })}
+            {canManage && (() => {
+              const pred = predOf(openPlayer.id)
+              const d = pred ? describeProno({ pred, penalties, playerId: openPlayer.id, race }) : null
+              return <AddPenaltyZone pred={pred} d={d} rules={league?.rules} onPick={(type) => setConfirm({ kind: 'add', type })} />
+            })()}
           </FicheJoueurGP>
+        )}
+      </BottomSheet>
+
+      <BottomSheet
+        isOpen={!!openPlayer && !!confirm}
+        onClose={() => setConfirm(null)}
+        title={confirm?.kind === 'add' ? 'Ajouter une pénalité' : 'Retirer la pénalité'}
+      >
+        {openPlayer && confirm && (
+          <ConfirmPenalty
+            kind={confirm.kind}
+            player={openPlayer}
+            race={race}
+            type={confirm.type}
+            pen={confirm.pen}
+            amount={confirm.kind === 'add' ? ruleAmount(league?.rules, confirm.type) : getPenaltyAmount(confirm.pen)}
+            whenText={confirm.pen ? formatPenaltyWhen(confirm.pen) : null}
+            onCancel={() => setConfirm(null)}
+            onConfirm={async (motif) => {
+              const res = confirm.kind === 'add'
+                ? await onAddPenalty({ player: openPlayer, race, type: confirm.type, motif })
+                : await onRemovePenalty(confirm.pen)
+              if (res?.ok) setConfirm(null)
+              return res
+            }}
+          />
         )}
       </BottomSheet>
     </div>

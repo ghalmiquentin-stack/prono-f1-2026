@@ -33,7 +33,7 @@ function Chip({ tone, children, icon }) {
 }
 
 // « 7 nov. à 12h31 » : heure du serveur pour une pénalité automatique, sinon date de création
-function formatPenaltyWhen(pen) {
+export function formatPenaltyWhen(pen) {
   const date = toValidDate(pen.source === 'auto' ? (pen.eventTime ?? pen.createdAt) : pen.createdAt)
   if (!date) return null
   const day = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
@@ -55,7 +55,8 @@ export function describeProno({ pred, penalties, playerId, race }) {
 
   // tardif : pénalisé (une pénalité tardive existe), non pénalisé (envoi après les qualifs sans pénalité), ou à temps
   const late = pens.lateCount > 0 ? 'penalized'
-    : (qualStart && submittedDate && submittedDate >= qualStart ? 'unpenalized' : 'none')
+    : !qualStart ? 'unknown' // heure des qualifs inconnue : on ne dit ni « à temps » ni « tardif »
+      : (submittedDate && submittedDate >= qualStart ? 'unpenalized' : 'none')
 
   const changed = POSITIONS.map(pos => mods > 0 && !!pred.initialPrediction && pred.prediction?.[pos] !== pred.initialPrediction?.[pos])
   return {
@@ -87,7 +88,7 @@ function PodiumCards({ pred, d, drivers }) {
 }
 
 function Pronostic({ pred, d, drivers, hidden }) {
-  const late = d.late !== 'none'
+  const late = d.late === 'penalized' || d.late === 'unpenalized'
   const tone = d.penalizedMod ? PEN : FREE
   return (
     <div className="space-y-3">
@@ -110,7 +111,7 @@ function Pronostic({ pred, d, drivers, hidden }) {
           </p>
           {late
             ? <Chip tone={PEN}>{d.late === 'penalized' ? 'Tardif' : 'Tardif, non pénalisé'}</Chip>
-            : <Chip tone={OK} icon={<Check size={12} />}>À temps</Chip>}
+            : d.late === 'none' && <Chip tone={OK} icon={<Check size={12} />}>À temps</Chip>}
         </div>
       )}
 
@@ -142,6 +143,7 @@ function PenaltyList({ list, onRemove }) {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold">{t.label}</p>
                   <p className="text-[11px] text-muted">{pen.source === 'auto' ? 'Automatique' : 'Par un admin'}{when ? ` · ${when}` : ''}</p>
+                  {pen.motif && <p className="text-[11px] italic break-words">« {pen.motif} »</p>}
                 </div>
                 <span className="font-black text-sm text-accent shrink-0">−{getPenaltyAmount(pen)}</span>
                 {onRemove && (

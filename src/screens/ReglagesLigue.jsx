@@ -1,59 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { doc, writeBatch, serverTimestamp } from 'firebase/firestore'
-import { ChevronDown } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { db } from '../firebase'
 import { useCollection, useDocument, where, upsertDoc, deleteDocument } from '../hooks/useFirestore'
-import { getProfile } from '../utils/profiles'
-import { hasRaceStarted } from '../utils/races'
-import { getPenaltyAmount, summarizePenalties } from '../utils/penalties'
-import BottomSheet from '../components/BottomSheet'
 import DeleteLeagueSheet from '../components/DeleteLeagueSheet'
-import ConfirmModal from '../components/ConfirmModal'
 import Skeleton from '../components/Skeleton'
 import ReglagesHub from '../components/reglages/ReglagesHub'
 import ReglagesJoueurs from '../components/reglages/ReglagesJoueurs'
 import ReglagesRegles from '../components/reglages/ReglagesRegles'
 import ReglagesSuivi from '../components/reglages/ReglagesSuivi'
-
-function formatSubmittedDate(ts) {
-  if (!ts) return '—'
-  const date = ts?.toDate?.() ?? new Date(ts)
-  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-}
-
-// Same "Xh_MM" time formatting convention as "Soumis le…" on the Accueil
-// card (see formatPredTime there), applied to a single short date+time —
-// no dual-timezone flags here, this is for the compact admin penalty row.
-// Returns null (not '—') when absent, so the caller can omit it entirely.
-// No explicit timeZone on either part — resolves to the viewer's own
-// browser timezone, same as the date part right next to it.
-function formatPenaltyDate(ts) {
-  if (!ts) return null
-  const date = ts?.toDate?.() ?? new Date(ts)
-  const datePart = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-  const parts = new Intl.DateTimeFormat('fr-FR', {
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  }).formatToParts(date)
-  const h = parts.find(p => p.type === 'hour')?.value ?? '00'
-  const m = parts.find(p => p.type === 'minute')?.value ?? '00'
-  return `${datePart}, ${h}h${m}`
-}
-
-// Heure serveur de l'événement pénalisé (pénalités automatiques, champ
-// eventTime), même format jour + heure à la minute que formatPenaltyDate.
-// Retourne null si le champ est absent ou illisible : l'appelant retombe alors
-// sur l'affichage habituel (createdAt) au lieu de faire planter l'écran.
-function formatServerEventTime(ts) {
-  if (!ts) return null
-  try {
-    const date = ts?.toDate?.() ?? new Date(ts)
-    if (Number.isNaN(date.getTime())) return null
-    return formatPenaltyDate(date)
-  } catch {
-    return null
-  }
-}
 
 export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveLeague, setActiveTab, addToast }) {
   const { user } = useAuth()
@@ -99,87 +54,39 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
   const isSoleAdmin = isLeagueAdmin && league.adminUids.length === 1
   const myActiveProfile = myProfiles.find(p => p.leagueId === leagueId && p.active !== false)
 
-  // ── Onglets Pronos / Pénalités ───────────────────────────────────────────
-  const [tab, setTab] = useState('pronos')
-  const [penaltySheetOpen, setPenaltySheetOpen] = useState(false)
-  const [penaltyRaceId, setPenaltyRaceId] = useState(null)
-  const [penaltyPlayerId, setPenaltyPlayerId] = useState(null)
-  const [penaltyType, setPenaltyType] = useState('late')
-  const [expandedPenaltyPlayer, setExpandedPenaltyPlayer] = useState(null) // player.id
-
-  // Exceptional manual override — lets a player edit their prediction again
-  // even after the race has started (see PredictionSheet's pencil button on
-  // Accueil). Default is off; the admin turns it on per-prediction here.
-  const toggleManualUnlock = async (pred) => {
-    // Defense in depth — this action is only ever reachable today because
-    // MesLigues.jsx gates navigation to this screen to league admins, but
-    // that's a navigation-level guard, not a per-action one. Firestore rules
-    // also enforce isLeagueAdmin server-side; this just fails fast in the UI.
-    if (!isLeagueAdmin) {
-      addToast?.('Réservé aux administrateurs de la ligue', 'error')
-      return
-    }
-    try {
-      // `_id` is a client-only artifact injected by useCollection ({ _id:
-      // d.id, ...d.data() }) — never a real Firestore field. Strip it before
-      // spreading, so it never gets written back into the document.
-      const { _id, ...predFields } = pred
-      await upsertDoc('predictions', pred._id, { ...predFields, manualUnlockOverride: !pred.manualUnlockOverride })
-      addToast?.(
-        pred.manualUnlockOverride
-          ? 'Déverrouillage exceptionnel désactivé'
-          : 'Déverrouillage exceptionnel activé — modification possible même après le départ',
-        'info'
-      )
-    } catch {
-      addToast?.('Erreur', 'error')
-    }
-  }
-
-  const addPenalty = async () => {
-    if (!penaltyRaceId || !penaltyPlayerId) return
-    // Defense in depth — see toggleManualUnlock's comment above.
-    if (!isLeagueAdmin) {
-      addToast?.('Réservé aux administrateurs de la ligue', 'error')
-      return
-    }
-    const id = `pen_${penaltyType}_${penaltyPlayerId}_${penaltyRaceId}_${Date.now()}`
-    // Snapshot the currently configured amount so the penalty's own points
-    // stay fixed even if the league's rule amount changes later.
-    const amount = penaltyType === 'late'
-      ? (league?.rules?.postQualifsPenalty?.amount ?? 10)
-      : (league?.rules?.modificationPenalty?.amount ?? 5)
+  // ── Pénalités à la main : ajout et retrait (depuis la fiche d'un joueur, dans Suivi des GP) ──
+  // Le déverrouillage exceptionnel d'un pronostic (cadenas) n'existe plus dans l'interface (décision du
+  // 9 nov. 2026). Les deux fonctions renvoient { ok, error } : la fiche affiche l'erreur et reste ouverte.
+  const addPenalty = async ({ player, race, type, motif }) => {
+    // Défense en profondeur : les règles Firestore refusent déjà tout non-admin ; on échoue vite côté interface.
+    if (!isLeagueAdmin) return { ok: false, error: 'Réservé aux administrateurs de la ligue.' }
+    const id = `pen_${type}_${player.id}_${race.id}_${Date.now()}`
+    // On fige le montant des règles du moment : la pénalité garde ses points même si la règle change ensuite.
+    const rule = type === 'late' ? league?.rules?.postQualifsPenalty : league?.rules?.modificationPenalty
+    const fallback = type === 'late' ? 10 : 5
+    const amount = typeof rule?.amount === 'number' && rule.amount > 0 ? rule.amount : fallback
     try {
       await upsertDoc('penalties', id, {
-        playerId: penaltyPlayerId, raceId: penaltyRaceId, type: penaltyType, leagueId, amount,
+        playerId: player.id, raceId: race.id, type, leagueId, amount,
         createdAt: new Date(),
+        addedBy: user?.uid ?? null,
+        ...(motif ? { motif } : {}),
       })
       addToast?.('Pénalité ajoutée', 'warning')
-      setPenaltySheetOpen(false)
-      setPenaltyRaceId(null)
-      setPenaltyPlayerId(null)
+      return { ok: true }
     } catch {
-      addToast?.('Erreur', 'error')
+      return { ok: false, error: "Erreur lors de l'ajout de la pénalité. Réessaie." }
     }
   }
 
-  const [deletePenaltyTarget, setDeletePenaltyTarget] = useState(null) // penId
-
-  const confirmRemovePenalty = async () => {
-    if (!deletePenaltyTarget) return
-    // Defense in depth — see toggleManualUnlock's comment above.
-    if (!isLeagueAdmin) {
-      addToast?.('Réservé aux administrateurs de la ligue', 'error')
-      setDeletePenaltyTarget(null)
-      return
-    }
+  const removePenalty = async (pen) => {
+    if (!isLeagueAdmin) return { ok: false, error: 'Réservé aux administrateurs de la ligue.' }
     try {
-      await deleteDocument('penalties', deletePenaltyTarget)
-      addToast?.('Pénalité supprimée', 'info')
+      await deleteDocument('penalties', pen._id)
+      addToast?.('Pénalité retirée', 'info')
+      return { ok: true }
     } catch {
-      addToast?.('Erreur', 'error')
-    } finally {
-      setDeletePenaltyTarget(null)
+      return { ok: false, error: 'Erreur lors du retrait de la pénalité. Réessaie.' }
     }
   }
 
@@ -345,6 +252,9 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
           initialRaceId={suiviStart.raceId}
           initialFilter={suiviStart.filter}
           onBack={() => setView('hub')}
+          canManage={isLeagueAdmin}
+          onAddPenalty={addPenalty}
+          onRemovePenalty={removePenalty}
         />
       )}
 
@@ -360,106 +270,6 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
           penalties: penalties.length,
         }}
       />
-
-      <ConfirmModal
-        isOpen={!!deletePenaltyTarget}
-        title="Supprimer cette pénalité ?"
-        message="Cette pénalité sera définitivement supprimée."
-        confirmLabel="Supprimer"
-        danger
-        onConfirm={confirmRemovePenalty}
-        onCancel={() => setDeletePenaltyTarget(null)}
-      />
-
-      <BottomSheet
-        isOpen={penaltySheetOpen}
-        onClose={() => setPenaltySheetOpen(false)}
-        title="Ajouter une pénalité"
-      >
-        <div className="p-5 pb-10 space-y-4">
-          <div>
-            <p className="section-title">Joueur</p>
-            <div className="grid grid-cols-2 gap-2">
-              {players.map(player => {
-                const identity = getProfile(profiles, player)
-                const avatar = String(identity?.avatar ?? '🏎️')
-                return (
-                  <button
-                    key={player.id}
-                    onClick={() => setPenaltyPlayerId(player.id)}
-                    className={`p-3 rounded-xl border text-center transition-all ${
-                      penaltyPlayerId === player.id ? 'border-accent bg-accent/20' : 'border-border'
-                    }`}
-                  >
-                    <span className="text-xl">{avatar}</span>
-                    <p className="font-bold text-sm mt-1">{identity?.displayName ?? player.id}</p>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <div>
-            <p className="section-title">Course</p>
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {sortedRaces.map(race => (
-                <button
-                  key={race.id}
-                  onClick={() => setPenaltyRaceId(race.id)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all ${
-                    penaltyRaceId === race.id ? 'border-accent bg-accent/20' : 'border-border hover:border-muted'
-                  }`}
-                >
-                  <span>{race.flag}</span>
-                  <span className="text-sm font-bold">{race.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="section-title">Type de pénalité</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setPenaltyType('late')}
-                className={`p-3 rounded-xl border text-center transition-all ${
-                  penaltyType === 'late' ? 'border-accent bg-accent/20' : 'border-border'
-                }`}
-              >
-                <p className="font-bold text-sm">Tardif</p>
-                <p className="text-accent font-black">-{league?.rules?.postQualifsPenalty?.amount ?? 10} pts</p>
-                {league?.rules?.postQualifsPenalty?.enabled === false && (
-                  <p className="text-[10px] text-muted mt-0.5">Désactivée dans les règles</p>
-                )}
-              </button>
-              <button
-                onClick={() => setPenaltyType('change')}
-                className={`p-3 rounded-xl border text-center transition-all ${
-                  penaltyType === 'change' ? 'border-accent bg-accent/20' : 'border-border'
-                }`}
-              >
-                <p className="font-bold text-sm">Modification</p>
-                <p className="text-accent font-black">-{league?.rules?.modificationPenalty?.amount ?? 5} pts</p>
-                {league?.rules?.modificationPenalty?.enabled === false && (
-                  <p className="text-[10px] text-muted mt-0.5">Désactivée dans les règles</p>
-                )}
-              </button>
-            </div>
-          </div>
-
-          <button
-            onClick={addPenalty}
-            disabled={!penaltyPlayerId || !penaltyRaceId}
-            className={`w-full py-4 rounded-xl font-black text-lg transition-all ${
-              penaltyPlayerId && penaltyRaceId
-                ? 'bg-accent text-white shadow-glow-red'
-                : 'bg-surfaceHigh text-muted cursor-not-allowed'
-            }`}
-          >
-            Ajouter la pénalité
-          </button>
-        </div>
-      </BottomSheet>
     </div>
   )
 }
