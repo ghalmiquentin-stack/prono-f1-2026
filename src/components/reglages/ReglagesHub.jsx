@@ -149,7 +149,7 @@ export default function ReglagesHub({
           <div>
             <Section>Prochain GP</Section>
             <div className="card overflow-hidden divide-y divide-border">
-              <button onClick={() => onOpen('suivi', { tab: 'pronos' })} className="w-full text-left p-4 active:bg-surfaceHigh/50">
+              <button onClick={() => onOpen('suivi', { raceId: nextRace.id, filter: next.missing.length > 0 ? 'missing' : 'all' })} className="w-full text-left p-4 active:bg-surfaceHigh/50">
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="font-black text-base leading-snug">{nextRace.flag} GP {nextRace.name}</p>
@@ -173,7 +173,7 @@ export default function ReglagesHub({
                 </div>
               </button>
 
-              <button onClick={() => onOpen('suivi', { tab: 'penalties' })} className="w-full text-left p-4 active:bg-surfaceHigh/50 flex items-start gap-3" style={{ minHeight: 64 }}>
+              <button onClick={() => onOpen('suivi', { raceId: nextRace.id, filter: next.penalised.length > 0 ? 'pen' : 'all' })} className="w-full text-left p-4 active:bg-surfaceHigh/50 flex items-start gap-3" style={{ minHeight: 64 }}>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-3">
                     <p className="text-sm font-bold">Pénalités</p>

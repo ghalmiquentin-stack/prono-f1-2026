@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { doc, writeBatch, serverTimestamp } from 'firebase/firestore'
-import { ChevronDown, ChevronLeft } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { db } from '../firebase'
 import { useCollection, useDocument, where, upsertDoc, deleteDocument } from '../hooks/useFirestore'
@@ -14,6 +14,7 @@ import Skeleton from '../components/Skeleton'
 import ReglagesHub from '../components/reglages/ReglagesHub'
 import ReglagesJoueurs from '../components/reglages/ReglagesJoueurs'
 import ReglagesRegles from '../components/reglages/ReglagesRegles'
+import ReglagesSuivi from '../components/reglages/ReglagesSuivi'
 
 function formatSubmittedDate(ts) {
   if (!ts) return '—'
@@ -64,6 +65,7 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
   const { data: penalties } = useCollection(user ? 'penalties' : null, leagueConstraint)
   const { data: profiles } = useCollection(user ? 'profiles' : null)
   const { data: races } = useCollection(user ? 'races' : null)
+  const { data: drivers } = useCollection(user ? 'drivers' : null)
 
   const { data: myProfiles } = useCollection(
     user?.uid ? 'players' : null,
@@ -77,8 +79,18 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
   // Écran affiché : l'entrée (hub) ou un sous-écran. Pas d'adresse propre (l'app navigue par onglets).
   const [view, setView] = useState('hub') // 'hub' | 'suivi' | 'joueurs' | 'regles'
   useEffect(() => { setView('hub') }, [leagueId])
+  // Départ du Suivi des GP : GP et filtre demandés (liens du bloc « Prochain GP »), sinon le dernier GP couru
+  const lastPlayedRace = useMemo(() => [...sortedRaces].reverse().find(r => r.status === 'completed') ?? null, [sortedRaces])
+  const trackedRaces = useMemo(() => sortedRaces.filter(r => r.status !== 'cancelled'), [sortedRaces])
+  const [suiviStart, setSuiviStart] = useState({ raceId: null, filter: 'all', n: 0 })
   const openView = (next, opts = {}) => {
-    if (opts.tab) setTab(opts.tab)
+    if (next === 'suivi') {
+      setSuiviStart(prev => ({
+        raceId: opts.raceId ?? lastPlayedRace?.id ?? nextRace?.id ?? trackedRaces[0]?.id ?? null,
+        filter: opts.filter ?? 'all',
+        n: prev.n + 1, // nouvelle clé : l'écran repart du GP et du filtre demandés
+      }))
+    }
     setView(next)
     window.scrollTo?.(0, 0)
   }
@@ -275,16 +287,6 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
     )
   }
 
-  const subHead = (title, sub) => (
-    <div className="px-5 pt-4 pb-3">
-      <button onClick={() => setView('hub')} className="flex items-center gap-1 text-sm font-bold text-muted -ml-1 pr-3 active:opacity-70" style={{ minHeight: 44 }}>
-        <ChevronLeft size={18} />Réglages
-      </button>
-      <h1 className="text-2xl font-black tracking-tight leading-tight">{title}</h1>
-      {sub && <p className="text-sm text-muted mt-0.5 break-words">{sub}</p>}
-    </div>
-  )
-
   return (
     <div className="pb-4">
       {view === 'hub' && (
@@ -331,194 +333,19 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
       )}
 
       {view === 'suivi' && (
-        <>
-          {subHead('Suivi des GP')}
-          <div className="px-5 space-y-5">
-            {/* ── Onglets Pronos / Pénalités ── */}
-            <div>
-              <div className="flex gap-2 bg-surfaceHigh rounded-xl p-1 mb-4">
-                {[
-                  { id: 'pronos', label: 'Pronos' },
-                  { id: 'penalties', label: 'Pénalités' },
-                ].map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setTab(t.id)}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      tab === t.id ? 'bg-accent text-white' : 'text-muted'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-
-              {tab === 'pronos' && (
-                <div className="space-y-3">
-                  {sortedRaces
-                    .filter(r => r.status === 'completed' || predictions.some(p => p.raceId === r.id))
-                    .map(race => {
-                      const racePreds = predictions.filter(p => p.raceId === race.id)
-                      if (!racePreds.length) return null
-                      // Same league rule as Accueil — lifts automatically once
-                      // the GP has actually started, no admin exemption.
-                      const hideActive = !!league?.rules?.hidePredictionsBeforeRace?.enabled && !hasRaceStarted(race)
-                      return (
-                        <div key={race.id} className="card p-4">
-                          <div className="flex items-center gap-2 mb-3">
-                            <span>{race.flag}</span>
-                            <p className="font-bold text-sm">GP {race.name}</p>
-                            <span className={`text-xs font-bold ml-auto px-2 py-0.5 rounded-full ${
-                              race.status === 'cancelled' ? 'bg-red-500/20 text-red-400' :
-                              race.status === 'completed' ? 'bg-muted/20 text-muted' : 'bg-accent/20 text-accent'
-                            }`}>
-                              {race.status === 'cancelled' ? 'Annulé' : race.status === 'completed' ? 'Terminé' : 'À venir'}
-                            </span>
-                          </div>
-                          <div className="space-y-2">
-                            {players.map(player => {
-                              const identity = getProfile(profiles, player)
-                              const avatar = String(identity?.avatar ?? '🏎️')
-                              const color = String(identity?.color ?? '#6B6B8A')
-                              const pred = racePreds.find(p => p.playerId === player.id)
-                              if (!pred) return (
-                                <div key={player.id} className="flex items-center gap-2 py-1 opacity-40">
-                                  <span className="text-sm">{avatar}</span>
-                                  <span className="text-xs text-muted flex-1">
-                                    {identity?.displayName ?? player.id} — pas de prono
-                                  </span>
-                                </div>
-                              )
-                              const penaltySummary = summarizePenalties(penalties, player.id, race.id)
-                              return (
-                                <div key={player.id} className="flex items-center gap-2 py-1">
-                                  <span className="text-sm">{avatar}</span>
-                                  <span className="text-xs font-bold flex-1" style={{ color }}>
-                                    {identity?.displayName ?? player.id}
-                                  </span>
-                                  {hideActive ? (
-                                    <span className="text-xs text-muted text-right">
-                                      Soumis {formatSubmittedDate(pred.submittedAt)}
-                                      {penaltySummary.label ? <> · {penaltySummary.label}</> : null}
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs text-muted">
-                                      {pred.prediction?.P1} · {pred.prediction?.P2} · {pred.prediction?.P3}
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => toggleManualUnlock(pred)}
-                                    title={pred.manualUnlockOverride
-                                      ? 'Déverrouillage exceptionnel actif — cliquer pour revenir au verrouillage normal'
-                                      : 'Verrouillage normal — cliquer pour activer le déverrouillage exceptionnel'}
-                                    className={`text-xs px-2 py-1 rounded font-bold ml-1 ${
-                                      pred.manualUnlockOverride ? 'bg-green-500/20 text-green-400' : 'bg-surfaceHigh text-muted'
-                                    }`}
-                                  >
-                                    {pred.manualUnlockOverride ? '🔓' : '🔒'}
-                                  </button>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })}
-                </div>
-              )}
-
-              {tab === 'penalties' && (
-                <div className="space-y-3">
-                  <button
-                    onClick={() => setPenaltySheetOpen(true)}
-                    className="w-full btn-primary text-center"
-                  >
-                    + Ajouter une pénalité
-                  </button>
-                  {players.length === 0 ? (
-                    <div className="text-center py-10 text-muted">
-                      <span className="text-4xl block mb-3">✅</span>
-                      <p className="font-bold">Aucune pénalité</p>
-                    </div>
-                  ) : (
-                    players.map(player => {
-                      const identity = getProfile(profiles, player)
-                      const avatar = String(identity?.avatar ?? '🏎️')
-                      const displayName = String(identity?.displayName ?? player.id)
-                      const playerPenalties = penalties.filter(p => p.playerId === player.id)
-                      const count = playerPenalties.length
-                      const total = playerPenalties.reduce((sum, p) => sum + getPenaltyAmount(p), 0)
-                      const hasPenalties = count > 0
-                      const isExpanded = expandedPenaltyPlayer === player.id
-
-                      return (
-                        <div key={player.id} className="card overflow-hidden">
-                          <button
-                            onClick={() => hasPenalties && setExpandedPenaltyPlayer(isExpanded ? null : player.id)}
-                            disabled={!hasPenalties}
-                            className={`w-full flex items-center gap-3 p-3 text-left transition-colors ${
-                              hasPenalties ? 'hover:bg-surfaceHigh/50' : 'opacity-50 cursor-default'
-                            }`}
-                          >
-                            <span>{avatar}</span>
-                            <div className="flex-1">
-                              <p className="font-bold text-sm">{displayName}</p>
-                              <p className="text-xs text-muted">
-                                {count} pénalité{count > 1 ? 's' : ''} · {total > 0 ? `-${total}` : '0'} pt{total > 1 ? 's' : ''}
-                              </p>
-                            </div>
-                            {hasPenalties && (
-                              <ChevronDown
-                                size={16}
-                                className={`text-muted shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-                              />
-                            )}
-                          </button>
-
-                          {isExpanded && hasPenalties && (
-                            <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border">
-                              {playerPenalties.map(pen => {
-                                const race = races.find(r => r.id === pen.raceId)
-                                const isAuto = pen.source === 'auto'
-                                const serverTimeLabel = isAuto ? formatServerEventTime(pen.eventTime) : null
-                                const createdAtLabel = serverTimeLabel ? null : formatPenaltyDate(pen.createdAt)
-                                return (
-                                  <div key={pen._id} className="flex items-center gap-3 pt-2">
-                                    <p className="text-xs text-muted flex-1">
-                                      GP {race?.name ?? pen.raceId} · {pen.type === 'late' ? 'Tardif' : 'Modification'}
-                                      {isAuto && (
-                                        <span className="ml-1.5 text-[9px] font-bold tracking-wide bg-muted/20 text-muted px-1.5 py-0.5 rounded-full">
-                                          auto
-                                        </span>
-                                      )}
-                                      {serverTimeLabel && ` · ${serverTimeLabel}`}
-                                      {createdAtLabel && ` · ${createdAtLabel}`}
-                                    </p>
-                                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                                      pen.type === 'late' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'
-                                    }`}>
-                                      -{getPenaltyAmount(pen)}
-                                    </span>
-                                    <button
-                                      onClick={() => setDeletePenaltyTarget(pen._id)}
-                                      className="text-muted text-sm p-1 hover:text-white transition-colors"
-                                    >
-                                      🗑️
-                                    </button>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </>
+        <ReglagesSuivi
+          key={suiviStart.n}
+          league={league}
+          players={players}
+          predictions={predictions}
+          penalties={penalties}
+          profiles={profiles}
+          races={trackedRaces}
+          drivers={drivers}
+          initialRaceId={suiviStart.raceId}
+          initialFilter={suiviStart.filter}
+          onBack={() => setView('hub')}
+        />
       )}
 
       <DeleteLeagueSheet

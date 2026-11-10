@@ -3,7 +3,7 @@ import { getModificationCount } from '../utils/predictions'
 
 // Date valide ou null — jamais d'exception (Timestamp Firestore, Date, nombre,
 // chaîne ISO ; tout le reste, y compris un objet dont toDate() lève, donne null).
-function toValidDate(ts) {
+export function toValidDate(ts) {
   if (!ts) return null
   try {
     const date = ts?.toDate?.() ?? new Date(ts)
@@ -15,7 +15,7 @@ function toValidDate(ts) {
 
 // "22h24" — à la minute, jamais à la seconde (l'horloge d'un appareil n'a pas
 // cette précision). Pas de fuseau imposé : celui de l'appareil du joueur.
-function formatHourMinute(date) {
+export function formatHourMinute(date) {
   const parts = new Intl.DateTimeFormat('fr-FR', {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(date)
