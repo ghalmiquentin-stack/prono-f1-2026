@@ -106,6 +106,7 @@ function ManageBody({ p, soleAdmin, busy, onPromote, onDemote, onRemove, onBan, 
               : p.canBeAdmin && <Action disabled={busy} onClick={onPromote} icon={<ShieldCheck size={20} />} title="Nommer admin" desc="Il pourra modifier les règles, les pénalités et les joueurs." />}
             {(p.admin ? !soleAdmin : p.canBeAdmin) && <div className="border-t border-border" />}
             <Action disabled={busy} onClick={onRemove} icon={<UserMinus size={20} />} title="Retirer de la ligue" desc="Il ne joue plus, son historique reste. Il peut revenir avec le code." />
+            <div className="border-t border-border" />
             <Action disabled={busy} onClick={onBan} icon={<Ban size={20} />} danger title="Bannir" desc={p.admin ? "Il ne pourra plus revenir avec le code et perd son rôle d'admin." : "Il ne pourra plus revenir avec le code, tant que tu ne l'as pas réintégré."} />
           </>
         )}
