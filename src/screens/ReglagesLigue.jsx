@@ -5,16 +5,15 @@ import { useAuth } from '../hooks/useAuth'
 import { db } from '../firebase'
 import { useCollection, useDocument, where, upsertDoc, deleteDocument } from '../hooks/useFirestore'
 import { getProfile } from '../utils/profiles'
-import { parseAmount } from '../utils/leagues'
 import { hasRaceStarted } from '../utils/races'
 import { getPenaltyAmount, summarizePenalties } from '../utils/penalties'
-import LeagueRulesFields from '../components/LeagueRulesFields'
 import BottomSheet from '../components/BottomSheet'
 import DeleteLeagueSheet from '../components/DeleteLeagueSheet'
 import ConfirmModal from '../components/ConfirmModal'
 import Skeleton from '../components/Skeleton'
 import ReglagesHub from '../components/reglages/ReglagesHub'
 import ReglagesJoueurs from '../components/reglages/ReglagesJoueurs'
+import ReglagesRegles from '../components/reglages/ReglagesRegles'
 
 function formatSubmittedDate(ts) {
   if (!ts) return '—'
@@ -87,84 +86,6 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
   const isLeagueAdmin = Array.isArray(league?.adminUids) && league.adminUids.includes(user?.uid)
   const isSoleAdmin = isLeagueAdmin && league.adminUids.length === 1
   const myActiveProfile = myProfiles.find(p => p.leagueId === leagueId && p.active !== false)
-
-  // ── Édition du nom de la ligue ───────────────────────────────────────────
-  const [nameDraft, setNameDraft] = useState('')
-  const [nameLoaded, setNameLoaded] = useState(false)
-  const [savingName, setSavingName] = useState(false)
-
-  // Reset so the field re-syncs from Firestore if the viewed league changes.
-  useEffect(() => { setNameLoaded(false) }, [leagueId])
-
-  useEffect(() => {
-    if (!league || nameLoaded) return
-    setNameDraft(league.name ?? '')
-    setNameLoaded(true)
-  }, [league, nameLoaded])
-
-  const nameInvalid = !nameDraft.trim()
-  const nameChanged = nameDraft.trim() !== (league?.name ?? '').trim()
-
-  const saveLeagueName = async () => {
-    if (nameInvalid || !nameChanged) return
-    setSavingName(true)
-    try {
-      await upsertDoc('leagues', leagueId, { name: nameDraft.trim() })
-      addToast?.('Nom de la ligue mis à jour', 'success')
-    } catch {
-      addToast?.('Erreur lors de la sauvegarde', 'error')
-    } finally {
-      setSavingName(false)
-    }
-  }
-
-  // ── Édition des règles ───────────────────────────────────────────────────
-  const [modEnabled, setModEnabled] = useState(true)
-  const [modAmount, setModAmount] = useState('5')
-  const [postQualEnabled, setPostQualEnabled] = useState(true)
-  const [postQualAmount, setPostQualAmount] = useState('10')
-  const [hideEnabled, setHideEnabled] = useState(true)
-  const [rulesLoaded, setRulesLoaded] = useState(false)
-  const [savingRules, setSavingRules] = useState(false)
-
-  // Reset so the form re-syncs from Firestore if the viewed league changes.
-  useEffect(() => { setRulesLoaded(false) }, [leagueId])
-
-  useEffect(() => {
-    if (!league || rulesLoaded) return
-    const rules = league.rules ?? {}
-    setModEnabled(rules.modificationPenalty?.enabled ?? true)
-    setModAmount(String(rules.modificationPenalty?.amount ?? 5))
-    setPostQualEnabled(rules.postQualifsPenalty?.enabled ?? true)
-    setPostQualAmount(String(rules.postQualifsPenalty?.amount ?? 10))
-    setHideEnabled(rules.hidePredictionsBeforeRace?.enabled ?? true)
-    setRulesLoaded(true)
-  }, [league, rulesLoaded])
-
-  const modAmountNum = parseAmount(modAmount)
-  const postQualAmountNum = parseAmount(postQualAmount)
-  const modAmountInvalid = modEnabled && modAmountNum <= 0
-  const postQualAmountInvalid = postQualEnabled && postQualAmountNum <= 0
-  const rulesHaveError = modAmountInvalid || postQualAmountInvalid
-
-  const saveRules = async () => {
-    if (rulesHaveError) return
-    setSavingRules(true)
-    try {
-      await upsertDoc('leagues', leagueId, {
-        rules: {
-          modificationPenalty: { enabled: modEnabled, amount: modAmountNum },
-          postQualifsPenalty: { enabled: postQualEnabled, amount: postQualAmountNum },
-          hidePredictionsBeforeRace: { enabled: hideEnabled },
-        },
-      })
-      addToast?.('Règles mises à jour', 'success')
-    } catch {
-      addToast?.('Erreur lors de la sauvegarde', 'error')
-    } finally {
-      setSavingRules(false)
-    }
-  }
 
   // ── Onglets Pronos / Pénalités ───────────────────────────────────────────
   const [tab, setTab] = useState('pronos')
@@ -382,61 +303,14 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
       )}
 
       {view === 'regles' && (
-        <>
-          {subHead('Règles')}
-          <div className="px-5 space-y-5">
-            {/* ── Nom de la ligue ── */}
-            {isLeagueAdmin && (
-              <div className="card p-5 space-y-3">
-                <p className="section-title">Nom de la ligue</p>
-                <input
-                  type="text"
-                  value={nameDraft}
-                  onChange={e => setNameDraft(e.target.value)}
-                  className="input-field"
-                  maxLength={30}
-                  placeholder="Nom de la ligue"
-                />
-                <button
-                  onClick={saveLeagueName}
-                  disabled={nameInvalid || !nameChanged || savingName}
-                  className={`w-full py-3.5 rounded-xl font-black text-base transition-all active:scale-95 ${
-                    !nameInvalid && nameChanged && !savingName
-                      ? 'bg-accent text-white shadow-glow-red'
-                      : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                  }`}
-                >
-                  {savingName ? 'Enregistrement…' : 'Enregistrer'}
-                </button>
-              </div>
-            )}
-
-            {/* ── Règles ── */}
-            <div className="card p-5 space-y-4">
-              <p className="section-title">Règles de la ligue</p>
-
-              <LeagueRulesFields
-                modEnabled={modEnabled} setModEnabled={setModEnabled}
-                modAmount={modAmount} setModAmount={setModAmount} modAmountInvalid={modAmountInvalid}
-                postQualEnabled={postQualEnabled} setPostQualEnabled={setPostQualEnabled}
-                postQualAmount={postQualAmount} setPostQualAmount={setPostQualAmount} postQualAmountInvalid={postQualAmountInvalid}
-                hideEnabled={hideEnabled} setHideEnabled={setHideEnabled}
-              />
-
-              <button
-                onClick={saveRules}
-                disabled={rulesHaveError || savingRules}
-                className={`w-full py-3.5 rounded-xl font-black text-base transition-all active:scale-95 ${
-                  !rulesHaveError && !savingRules
-                    ? 'bg-accent text-white shadow-glow-red'
-                    : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                }`}
-              >
-                {savingRules ? 'Enregistrement…' : 'Enregistrer'}
-              </button>
-            </div>
-          </div>
-        </>
+        <ReglagesRegles
+          key={leagueId}
+          league={league}
+          leagueId={leagueId}
+          isLeagueAdmin={isLeagueAdmin}
+          onBack={() => setView('hub')}
+          addToast={addToast}
+        />
       )}
 
       {view === 'joueurs' && (

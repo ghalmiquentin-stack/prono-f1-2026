@@ -2,8 +2,11 @@ export default function Switch({ checked, onChange }) {
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative w-12 h-7 rounded-full shrink-0 transition-colors duration-200 ${
+      // after:… = zone tactile invisible qui porte la cible à 44 px de haut sans changer l'apparence
+      className={`relative w-12 h-7 rounded-full shrink-0 transition-colors duration-200 after:content-[''] after:absolute after:-inset-x-1 after:-inset-y-2 ${
         checked ? 'bg-accent' : 'bg-surfaceHigh'
       }`}
     >

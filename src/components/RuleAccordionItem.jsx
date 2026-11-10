@@ -10,6 +10,7 @@ export default function RuleAccordionItem({
   amount,
   onAmountChange,
   amountInvalid,
+  emphasizeAmount = false, // Réglages de ligue : montant rouge en gras, « Activé » en blanc (création de ligue inchangée)
 }) {
   const [open, setOpen] = useState(false)
   const hasAmount = onAmountChange != null
@@ -23,11 +24,21 @@ export default function RuleAccordionItem({
       >
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold">{title}</p>
-          <p className="text-xs text-muted mt-0.5">
-            {hasAmount
-              ? (checked ? `-${amount || 0} pts` : 'Désactivée')
-              : (checked ? 'Activé' : 'Désactivé')}
-          </p>
+          {emphasizeAmount ? (
+            hasAmount
+              ? (checked
+                ? <p className="text-base font-black text-accent mt-0.5">−{amount || 0} pts</p>
+                : <p className="text-xs text-muted mt-0.5">Désactivée</p>)
+              : (checked
+                ? <p className="text-sm font-bold text-white mt-0.5">Activé</p>
+                : <p className="text-xs text-muted mt-0.5">Désactivé</p>)
+          ) : (
+            <p className="text-xs text-muted mt-0.5">
+              {hasAmount
+                ? (checked ? `-${amount || 0} pts` : 'Désactivée')
+                : (checked ? 'Activé' : 'Désactivé')}
+            </p>
+          )}
         </div>
         <div onClick={e => e.stopPropagation()}>
           <Switch checked={checked} onChange={onToggle} />
