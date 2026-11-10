@@ -212,7 +212,7 @@ export default function ReglagesHub({
             sub={`${activePlayers.length} joueur${activePlayers.length > 1 ? 's' : ''} · ${adminCount} admin${adminCount > 1 ? 's' : ''}`}
             onClick={() => onOpen('joueurs')}
           />
-          <Entry icon={<SlidersHorizontal size={18} />} title="Règles" sub={rulesSummary(league?.rules)} onClick={() => onOpen('regles')} />
+          <Entry icon={<SlidersHorizontal size={18} />} title="Nom et règles" sub={rulesSummary(league?.rules)} onClick={() => onOpen('regles')} />
         </div>
 
         {canDelete && (

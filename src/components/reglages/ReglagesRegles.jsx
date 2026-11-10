@@ -82,7 +82,7 @@ export default function ReglagesRegles({ league, leagueId, isLeagueAdmin, onBack
         <button onClick={back} className="flex items-center gap-1 text-sm font-bold text-muted -ml-1 pr-3 active:opacity-70" style={{ minHeight: 44 }}>
           <ChevronLeft size={18} />Réglages
         </button>
-        <h1 className="text-2xl font-black tracking-tight leading-tight">Règles</h1>
+        <h1 className="text-2xl font-black tracking-tight leading-tight">Nom et règles</h1>
       </div>
 
       <div className="px-5 space-y-5">
