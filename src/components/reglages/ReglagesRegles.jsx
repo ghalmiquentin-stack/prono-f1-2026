@@ -104,7 +104,6 @@ export default function ReglagesRegles({ league, leagueId, isLeagueAdmin, onBack
           <p className={`${SECTION} mb-2`}>Pénalités et pronostics</p>
           <div className="card px-4">
             <LeagueRulesFields
-              emphasizeAmount
               modEnabled={mod} setModEnabled={setMod} modAmount={modAmt} setModAmount={setModAmt} modAmountInvalid={modInvalid}
               postQualEnabled={late} setPostQualEnabled={setLate} postQualAmount={lateAmt} setPostQualAmount={setLateAmt} postQualAmountInvalid={lateInvalid}
               hideEnabled={hide} setHideEnabled={setHide}

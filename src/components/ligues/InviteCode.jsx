@@ -31,8 +31,9 @@ const BTN = 'h-11 px-3 rounded-lg border border-border bg-surfaceHigh text-xs fo
 
 // Code d'invitation d'une ligue : « Copier » met le code seul dans le presse-papiers ;
 // « Partager » ouvre le partage du téléphone avec une phrase d'invitation, et copie
-// cette phrase à la place quand le partage n'existe pas (ordinateur).
-export default function InviteCode({ league }) {
+// cette phrase à la place quand le partage n'existe pas (ordinateur) ; `shareable={false}`
+// le retire (écran de fin de Créer une ligue : Copier seulement).
+export default function InviteCode({ league, shareable = true }) {
   const [feedback, setFeedback] = useState(null) // 'code' | 'share' | 'error'
   const timer = useRef(null)
   useEffect(() => () => clearTimeout(timer.current), [])
@@ -62,17 +63,19 @@ export default function InviteCode({ league }) {
   return (
     <div>
       <p className="text-[11px] uppercase text-muted font-bold">Code d'invitation</p>
-      <div className="flex items-center justify-between gap-2 mt-1">
+      <div className="flex items-center justify-between gap-x-2 gap-y-1 flex-wrap mt-1">
         <p className="text-lg font-mono font-black tracking-widest">{league.code}</p>
         <div className="flex items-center gap-2">
           <button type="button" onClick={handleCopy} className={BTN}>
             {feedback === 'code' ? <Check size={15} className="text-green-400" /> : <Copy size={15} />}
             {feedback === 'code' ? 'Copié' : 'Copier'}
           </button>
-          <button type="button" onClick={handleShare} className={BTN}>
-            {feedback === 'share' ? <Check size={15} className="text-green-400" /> : <Share2 size={15} />}
-            {feedback === 'share' ? 'Copié' : 'Partager'}
-          </button>
+          {shareable && (
+            <button type="button" onClick={handleShare} className={BTN}>
+              {feedback === 'share' ? <Check size={15} className="text-green-400" /> : <Share2 size={15} />}
+              {feedback === 'share' ? 'Copié' : 'Partager'}
+            </button>
+          )}
         </div>
       </div>
       <div role="status" aria-live="polite">

@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { X, ChevronLeft, BookOpen } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { collection, doc, setDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import BottomSheet from '../components/BottomSheet'
 import LeagueRulesFields from '../components/LeagueRulesFields'
+import FlowLayout, { FlowButton } from '../components/FlowLayout'
+import ReglesLink from '../components/ReglesLink'
+import InviteCode from '../components/ligues/InviteCode'
 import { parseAmount } from '../utils/leagues'
-import ReglesDuJeu from './ReglesDuJeu'
 
 const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 const STEP_COUNT = 3
@@ -27,10 +29,22 @@ async function generateUniqueLeagueCode() {
   }
 }
 
+const SECTION = 'text-xs font-black uppercase tracking-widest text-white'
+
+// Ligne du récapitulatif (étape 3). `wrap` : la valeur (le nom, jusqu'à 30 caractères) passe
+// sur plusieurs lignes plutôt que de sortir de la carte.
+function RecapLine({ label, value, red = false, wrap = false }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-3 border-b border-border last:border-b-0">
+      <p className={`text-sm font-bold ${wrap ? 'shrink-0' : 'min-w-0'}`}>{label}</p>
+      <p className={`text-base font-black text-right ${wrap ? 'min-w-0 break-words' : 'shrink-0'} ${red ? 'text-accent' : 'text-white'}`}>{value}</p>
+    </div>
+  )
+}
+
 export default function CreerLigue({ user, setActiveTab, onSelectLeague }) {
   const [step, setStep] = useState(1)
   const [cancelSheetOpen, setCancelSheetOpen] = useState(false)
-  const [rulesSheetOpen, setRulesSheetOpen] = useState(false)
 
   const [name, setName] = useState('')
 
@@ -42,15 +56,24 @@ export default function CreerLigue({ user, setActiveTab, onSelectLeague }) {
 
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  // Rempli une fois la ligue créée : affiche l'écran de fin avec le code d'invitation.
+  const [created, setCreated] = useState(null) // { id, name, code }
 
   const modAmountNum = parseAmount(modAmount)
   const postQualAmountNum = parseAmount(postQualAmount)
   const modAmountInvalid = modEnabled && modAmountNum <= 0
   const postQualAmountInvalid = postQualEnabled && postQualAmountNum <= 0
   const step2HasError = modAmountInvalid || postQualAmountInvalid
+  const nameOk = name.trim() !== ''
 
   const goBack = () => setStep(s => Math.max(1, s - 1))
   const goNext = () => setStep(s => Math.min(STEP_COUNT, s + 1))
+
+  // La croix ne demande confirmation que si un nom a été saisi.
+  const handleClose = () => {
+    if (nameOk) setCancelSheetOpen(true)
+    else setActiveTab?.('leagues')
+  }
 
   const handleCancelConfirm = () => {
     setCancelSheetOpen(false)
@@ -58,7 +81,7 @@ export default function CreerLigue({ user, setActiveTab, onSelectLeague }) {
   }
 
   const handleCreate = async () => {
-    if (!name.trim() || !user?.uid) return
+    if (!nameOk || !user?.uid || creating) return
     setCreating(true)
     setError('')
     try {
@@ -86,200 +109,146 @@ export default function CreerLigue({ user, setActiveTab, onSelectLeague }) {
         authUid: user.uid,
       })
 
-      onSelectLeague?.(leagueRef.id)
+      setCreated({ id: leagueRef.id, name: name.trim(), code })
     } catch (err) {
-      setError('Erreur lors de la création de la ligue. Réessayez.')
+      setError('Erreur lors de la création de la ligue. Réessaie.')
     } finally {
       setCreating(false)
     }
   }
 
-  return (
-    <div className="min-h-[100dvh] bg-bg flex flex-col items-center px-5 py-10 safe-top">
-      <div className="text-center mb-8">
-        <div className="text-6xl mb-4">🏎️</div>
-        <h1 className="text-4xl font-black tracking-tight mb-1">
-          PRONO <span className="text-accent glow-text">F1</span>
-        </h1>
-        <p className="text-2xl font-black tracking-widest text-muted">2026</p>
-        <div className="f1-stripe w-32 mx-auto mt-4" />
-      </div>
-
-      <div className="w-full max-w-sm">
-        {/* Header: back / cancel */}
-        <div className="flex items-center justify-between mb-4">
-          {step > 1 ? (
-            <button
-              onClick={goBack}
-              className="flex items-center gap-1 text-xs font-bold text-muted hover:text-white transition-colors"
-            >
-              <ChevronLeft size={16} />
-              Retour
-            </button>
-          ) : (
-            <span />
-          )}
-          <button
-            onClick={() => setCancelSheetOpen(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-surfaceHigh text-muted hover:text-white transition-colors"
-            aria-label="Annuler"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Progress bar */}
-        <div className="flex gap-2 mb-2">
-          {Array.from({ length: STEP_COUNT }, (_, i) => i + 1).map(s => (
+  // ── Fin : la ligue existe, on montre le code d'invitation ──
+  if (created) {
+    return (
+      <div className="h-[100dvh] bg-bg flex flex-col safe-top overflow-hidden">
+        <section className="flex-1 min-h-0 overflow-y-auto flex flex-col justify-center px-[22px] text-center">
+          <div className="relative mx-auto w-[84px] h-[84px] flex items-center justify-center shrink-0">
             <div
-              key={s}
-              className={`flex-1 h-1.5 rounded-full transition-colors ${s <= step ? 'bg-accent' : 'bg-border'}`}
+              className="absolute -inset-10 pointer-events-none"
+              style={{ background: 'radial-gradient(circle at 50% 50%, rgba(34,197,94,0.2) 0%, rgba(21,21,30,0) 65%)' }}
+              aria-hidden="true"
             />
-          ))}
-        </div>
-        <p className="text-center text-xs font-bold uppercase tracking-widest text-muted mb-6">
-          Étape {step}/{STEP_COUNT}
-        </p>
-
-        <div className="card p-5 space-y-4">
-          {/* ── Étape 1 : nom ── */}
-          {step === 1 && (
-            <>
-              <p className="section-title">Nom de la ligue</p>
-              <input
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                className="input-field"
-                maxLength={30}
-                placeholder="Ex. Ligue entre amis"
-                autoFocus
-              />
-              <button
-                onClick={goNext}
-                disabled={!name.trim()}
-                className={`w-full py-4 rounded-xl font-black text-lg tracking-wide text-white transition-all duration-200 active:scale-95 ${
-                  name.trim() ? 'bg-accent shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                }`}
-              >
-                Suivant
-              </button>
-            </>
-          )}
-
-          {/* ── Étape 2 : règles ── */}
-          {step === 2 && (
-            <>
-              <div className="flex items-center justify-between gap-3">
-                <p className="section-title mb-0">Règles de la ligue</p>
-                <button
-                  type="button"
-                  onClick={() => setRulesSheetOpen(true)}
-                  className="flex items-center gap-1.5 text-xs font-bold text-accent shrink-0"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <BookOpen size={14} />
-                    Voir le barème de points
-                  </span>
-                </button>
-              </div>
-
-              <LeagueRulesFields
-                modEnabled={modEnabled} setModEnabled={setModEnabled}
-                modAmount={modAmount} setModAmount={setModAmount} modAmountInvalid={modAmountInvalid}
-                postQualEnabled={postQualEnabled} setPostQualEnabled={setPostQualEnabled}
-                postQualAmount={postQualAmount} setPostQualAmount={setPostQualAmount} postQualAmountInvalid={postQualAmountInvalid}
-                hideEnabled={hideEnabled} setHideEnabled={setHideEnabled}
-              />
-
-              <button
-                onClick={goNext}
-                disabled={step2HasError}
-                className={`w-full py-4 rounded-xl font-black text-lg tracking-wide text-white transition-all duration-200 active:scale-95 ${
-                  !step2HasError ? 'bg-accent shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                }`}
-              >
-                Suivant
-              </button>
-            </>
-          )}
-
-          {/* ── Étape 3 : récapitulatif ── */}
-          {step === 3 && (
-            <>
-              <p className="section-title">Récapitulatif</p>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-xl bg-surfaceHigh/50">
-                  <p className="text-xs text-muted font-bold uppercase tracking-wide">Nom</p>
-                  <p className="font-black text-sm">{name}</p>
-                </div>
-
-                <div className="flex items-center justify-between p-3 rounded-xl bg-surfaceHigh/50">
-                  <p className="text-sm font-bold">Pénalité modification podium</p>
-                  <p className="font-bold text-sm" style={{ color: modEnabled ? '#E8002D' : undefined }}>
-                    {modEnabled ? `-${modAmountNum} pts` : 'Désactivée'}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between p-3 rounded-xl bg-surfaceHigh/50">
-                  <p className="text-sm font-bold">Pénalité prono après qualifs</p>
-                  <p className="font-bold text-sm" style={{ color: postQualEnabled ? '#E8002D' : undefined }}>
-                    {postQualEnabled ? `-${postQualAmountNum} pts` : 'Désactivée'}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between p-3 rounded-xl bg-surfaceHigh/50">
-                  <p className="text-sm font-bold">Pronostics masqués avant course</p>
-                  <p className="font-bold text-sm">{hideEnabled ? 'Activé' : 'Désactivé'}</p>
-                </div>
-              </div>
-
-              {error && (
-                <p className="text-accent text-xs font-bold">{error}</p>
-              )}
-
-              <button
-                onClick={handleCreate}
-                disabled={creating || !name.trim()}
-                className={`w-full py-4 rounded-xl font-black text-lg tracking-wide text-white transition-all duration-200 active:scale-95 ${
-                  !creating && name.trim() ? 'bg-accent shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                }`}
-              >
-                {creating ? 'Création…' : 'Créer ma ligue'}
-              </button>
-            </>
-          )}
+            <div className="relative w-[84px] h-[84px] rounded-full bg-green-500/10 border-[3px] border-green-500 flex items-center justify-center">
+              <Check size={40} strokeWidth={3} className="text-green-400" />
+            </div>
+          </div>
+          <h1 className="text-[30px] font-black tracking-tight leading-none mt-7">
+            Ta ligue est <span className="text-green-400">prête</span>.
+          </h1>
+          <p className="text-sm text-muted leading-normal mt-3 break-words">
+            « {created.name} » existe. Invite tes amis avec ce code.
+          </p>
+          <div className="card p-4 mt-6 text-left">
+            <InviteCode league={{ name: created.name, code: created.code }} shareable={false} />
+          </div>
+        </section>
+        <div className="shrink-0 px-5 pt-3 pb-[max(20px,env(safe-area-inset-bottom))]">
+          <FlowButton enabled onClick={() => onSelectLeague?.(created.id)}>Aller à ma ligue</FlowButton>
         </div>
       </div>
+    )
+  }
 
-      {/* ── Confirmation d'annulation ── */}
-      <BottomSheet isOpen={cancelSheetOpen} onClose={() => setCancelSheetOpen(false)} title="Annuler la création ?">
-        <div className="p-5 pb-10 space-y-4">
+  const isLast = step === STEP_COUNT
+  const nextEnabled = step === 1 ? nameOk : step === 2 ? !step2HasError : false
+
+  const footer = isLast ? (
+    <FlowButton enabled={nameOk && !step2HasError && !creating} onClick={handleCreate}>
+      {creating ? 'Création…' : 'Créer ma ligue'}
+    </FlowButton>
+  ) : (
+    <FlowButton enabled={nextEnabled} onClick={goNext}>Suivant</FlowButton>
+  )
+
+  return (
+    <FlowLayout
+      step={step}
+      count={STEP_COUNT}
+      onBack={step > 1 ? goBack : null}
+      onClose={handleClose}
+      footer={footer}
+    >
+      {/* ── Étape 1 : nom ── */}
+      {step === 1 && (
+        <>
+          <h1 className="text-2xl font-black tracking-tight leading-tight">Comment s'appelle ta ligue ?</h1>
+          <p className="text-sm text-muted mt-1">Tes amis la verront en la rejoignant.</p>
+          <input
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && nameOk && goNext()}
+            className="input-field mt-5"
+            maxLength={30}
+            placeholder="Ex. Ligue entre amis"
+            aria-label="Nom de la ligue"
+            autoFocus
+          />
+        </>
+      )}
+
+      {/* ── Étape 2 : règles ── */}
+      {step === 2 && (
+        <>
+          <h1 className="text-2xl font-black tracking-tight leading-tight">Les règles de ta ligue</h1>
+          <p className="text-sm text-muted mt-1">Tu pourras les changer plus tard dans les réglages de la ligue.</p>
+          <p className={`${SECTION} mt-5 mb-2`}>Pénalités et pronostics</p>
+          <div className="card px-4">
+            <LeagueRulesFields
+              modEnabled={modEnabled} setModEnabled={setModEnabled}
+              modAmount={modAmount} setModAmount={setModAmount} modAmountInvalid={modAmountInvalid}
+              postQualEnabled={postQualEnabled} setPostQualEnabled={setPostQualEnabled}
+              postQualAmount={postQualAmount} setPostQualAmount={setPostQualAmount} postQualAmountInvalid={postQualAmountInvalid}
+              hideEnabled={hideEnabled} setHideEnabled={setHideEnabled}
+            />
+          </div>
+          <div className="mt-4">
+            <ReglesLink />
+          </div>
+        </>
+      )}
+
+      {/* ── Étape 3 : récapitulatif ── */}
+      {step === 3 && (
+        <>
+          <h1 className="text-2xl font-black tracking-tight leading-tight">Tout est bon ?</h1>
+          <p className="text-sm text-muted mt-1">Vérifie avant de créer ta ligue.</p>
+          <p className={`${SECTION} mt-5 mb-2`}>Ligue</p>
+          <div className="card px-4"><RecapLine label="Nom" value={name.trim()} wrap /></div>
+          <p className={`${SECTION} mt-5 mb-2`}>Pénalités et pronostics</p>
+          <div className="card px-4">
+            <RecapLine label="Pénalité sur modification" value={modEnabled ? `−${modAmountNum} pts` : 'Désactivée'} red={modEnabled} />
+            <RecapLine label="Pénalité après les qualifs" value={postQualEnabled ? `−${postQualAmountNum} pts` : 'Désactivée'} red={postQualEnabled} />
+            <RecapLine label="Pronostics masqués avant la course" value={hideEnabled ? 'Activé' : 'Désactivé'} />
+          </div>
+          {error && <p className="text-accent text-xs font-bold mt-4" role="alert">{error}</p>}
+        </>
+      )}
+
+      {/* ── Abandon : seulement si un nom a été saisi ── */}
+      <BottomSheet isOpen={cancelSheetOpen} onClose={() => setCancelSheetOpen(false)} title="Abandonner la création ?">
+        <div className="p-5 space-y-4">
           <p className="text-sm text-muted leading-relaxed">
-            Les informations ne seront pas enregistrées.
+            Tu as commencé à créer une ligue. Si tu quittes maintenant, ce que tu as saisi sera perdu.
           </p>
           <div className="flex gap-3">
             <button
               onClick={() => setCancelSheetOpen(false)}
-              className="flex-1 py-3 rounded-xl border border-border text-sm font-bold"
+              className="flex-1 rounded-lg border border-border bg-surfaceHigh text-sm font-bold"
+              style={{ minHeight: 44 }}
             >
               Continuer
             </button>
             <button
               onClick={handleCancelConfirm}
-              className="flex-1 py-3 rounded-xl text-sm font-black text-white bg-red-600"
+              className="flex-1 rounded-lg bg-red-600 text-sm font-black text-white"
+              style={{ minHeight: 44 }}
             >
-              Annuler
+              Abandonner
             </button>
           </div>
         </div>
       </BottomSheet>
-
-      {/* ── Barème de points ── */}
-      <BottomSheet isOpen={rulesSheetOpen} onClose={() => setRulesSheetOpen(false)} fullHeight>
-        <ReglesDuJeu />
-      </BottomSheet>
-    </div>
+    </FlowLayout>
   )
 }

@@ -267,6 +267,16 @@ export default function App() {
     )
   }
 
+  // Parcours « Créer une ligue » : plein écran, sans barre du bas (on est au milieu d'une action).
+  if (activeTab === 'creer-ligue') {
+    return (
+      <>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+        <CreerLigue user={user} setActiveTab={setActiveTab} onSelectLeague={selectActiveLeague} />
+      </>
+    )
+  }
+
   // key = ligue active : à chaque changement de ligue (menu de l'en-tête) l'écran
   // est recréé, ce qui relance ses lectures Firestore sur la nouvelle ligue
   // (useCollection ne se réabonne pas quand ses contraintes changent).
@@ -290,8 +300,6 @@ export default function App() {
           : leaguesScreen
       case 'leagues':
         return leaguesScreen
-      case 'creer-ligue':
-        return <CreerLigue user={user} setActiveTab={setActiveTab} onSelectLeague={selectActiveLeague} />
       case 'rejoindre-ligue':
         return <RejoindreLigue user={user} setActiveTab={setActiveTab} onSelectLeague={selectActiveLeague} />
       case 'monprofil':

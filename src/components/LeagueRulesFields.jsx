@@ -4,7 +4,6 @@ export default function LeagueRulesFields({
   modEnabled, setModEnabled, modAmount, setModAmount, modAmountInvalid,
   postQualEnabled, setPostQualEnabled, postQualAmount, setPostQualAmount, postQualAmountInvalid,
   hideEnabled, setHideEnabled,
-  emphasizeAmount = false,
 }) {
   return (
     <div>
@@ -16,7 +15,6 @@ export default function LeagueRulesFields({
         amount={modAmount}
         onAmountChange={setModAmount}
         amountInvalid={modAmountInvalid}
-        emphasizeAmount={emphasizeAmount}
       />
       <RuleAccordionItem
         title="Pénalité sur pronostic après les qualifications"
@@ -26,14 +24,12 @@ export default function LeagueRulesFields({
         amount={postQualAmount}
         onAmountChange={setPostQualAmount}
         amountInvalid={postQualAmountInvalid}
-        emphasizeAmount={emphasizeAmount}
       />
       <RuleAccordionItem
         title="Masquer les pronostics avant le départ de la course"
         description="Les pronostics des autres joueurs restent invisibles jusqu'au départ de la course, pour éviter toute influence."
         checked={hideEnabled}
         onToggle={setHideEnabled}
-        emphasizeAmount={emphasizeAmount}
       />
     </div>
   )
