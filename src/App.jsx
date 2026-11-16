@@ -17,9 +17,12 @@ import ReglagesLigue from './screens/ReglagesLigue'
 import ReglagesSuperAdmin from './screens/ReglagesSuperAdmin'
 import ReglesDuJeu from './screens/ReglesDuJeu'
 import Intro from './screens/Intro'
+import PremiereLigue from './screens/PremiereLigue'
 
 let _toastId = 0
 const ACTIVE_LEAGUE_STORAGE_KEY = 'prono_f1_active_league_id'
+// Onglets qui, sans aucune ligue, affichent l'écran « sans ligue » à leur place.
+const LEAGUE_DEPENDENT_TABS = ['accueil', 'courses', 'classement', 'stats', 'leagues']
 
 export default function App() {
   const { user, authLoading } = useAuth()
@@ -234,6 +237,9 @@ export default function App() {
     .map(l => ({ id: l._id, name: String(l.name ?? ''), rules: l.rules ?? {} }))
     .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
   const hasAnyLeague = myPlayers.length > 0
+  // Jamais eu aucune ligue (même quittée ou perdue par bannissement) : écran d'accueil
+  // à part, juste après l'intro. Dès qu'il y a eu une ligue, c'est l'état vide de Mes ligues.
+  const hasEverHadLeague = players.some(p => p.authUid === user.uid)
   const leaguesScreen = (
     <MesLigues
       setActiveTab={setActiveTab}
@@ -245,6 +251,21 @@ export default function App() {
       addToast={addToast}
     />
   )
+
+  // Une ligue vient d'être créée ou rejointe : on attend qu'elle apparaisse dans la liste
+  // (écran vide) plutôt que de montrer une seconde l'écran « sans ligue ».
+  if (!hasAnyLeague && pendingActiveLeagueId && LEAGUE_DEPENDENT_TABS.includes(activeTab)) {
+    return <div className="min-h-[100dvh] bg-bg" />
+  }
+
+  if (!hasAnyLeague && !hasEverHadLeague && LEAGUE_DEPENDENT_TABS.includes(activeTab)) {
+    return (
+      <>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+        <PremiereLigue setActiveTab={setActiveTab} />
+      </>
+    )
+  }
 
   // key = ligue active : à chaque changement de ligue (menu de l'en-tête) l'écran
   // est recréé, ce qui relance ses lectures Firestore sur la nouvelle ligue

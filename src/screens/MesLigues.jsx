@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
-import { Trophy, Plus, LogIn, ShieldCheck, User, Search, X } from 'lucide-react'
+import { Trophy, Plus, ShieldCheck, User, Search, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { useRaceTiming } from '../hooks/useRaceTiming'
@@ -17,6 +17,44 @@ import AddLeagueSheet from '../components/ligues/AddLeagueSheet'
 const NEUTRAL_COLOR = '#6B6B8A'
 // À partir de ce nombre de ligues, un champ de recherche apparaît au-dessus des autres ligues.
 const SEARCH_FROM = 8
+
+// État vide : le joueur a déjà eu au moins une ligue (sinon App.jsx affiche PremiereLigue).
+function EtatVide({ onCreate, onJoin }) {
+  return (
+    <section aria-label="Aucune ligue" className="text-center -mt-10">
+      <div className="relative mx-auto w-[72px] h-[72px] flex items-center justify-center">
+        <div
+          className="absolute -inset-8 pointer-events-none"
+          style={{ background: 'radial-gradient(circle at 50% 50%, rgba(232,0,45,0.16) 0%, rgba(21,21,30,0) 65%)' }}
+          aria-hidden="true"
+        />
+        <div className="relative w-[72px] h-[72px] rounded-full bg-surface border border-border flex items-center justify-center">
+          <Trophy size={30} className="text-muted" />
+        </div>
+      </div>
+      <h2 className="text-[26px] font-black tracking-tight leading-tight mt-6">Tu n'as plus de ligue</h2>
+      <p className="text-sm text-muted leading-normal mt-2 mx-auto max-w-[300px]">
+        Rejoins la ligue d'un ami avec son code, ou crée la tienne.
+      </p>
+      <div className="mt-6 flex flex-col gap-3 w-full max-w-[320px] mx-auto">
+        <button
+          type="button"
+          onClick={onCreate}
+          className="w-full bg-accent text-white rounded-xl py-3.5 text-[15px] font-black active:scale-95 transition-transform"
+        >
+          Créer ma ligue
+        </button>
+        <button
+          type="button"
+          onClick={onJoin}
+          className="w-full min-h-[48px] rounded-xl border border-border bg-surface text-white text-[15px] font-bold active:opacity-70"
+        >
+          J'ai un code d'invitation
+        </button>
+      </div>
+    </section>
+  )
+}
 
 export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLeagueId, onSelectLeague, onClearActiveLeague, addToast }) {
   const { user } = useAuth()
@@ -233,12 +271,14 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
     </div>
   )
 
+  const isEmpty = count === 0
+
   return (
-    <div className="pb-4">
+    <div className={isEmpty ? 'pb-4 min-h-[calc(100dvh-100px)] flex flex-col' : 'pb-4'}>
       <div className="px-5 pt-5 pb-5 flex items-center justify-between gap-x-2 gap-y-3 flex-wrap">
         <div className="shrink-0">
           <h1 className="text-2xl font-black tracking-tight">Mes ligues</h1>
-          <p className="text-sm text-muted">{count} ligue{count !== 1 ? 's' : ''}</p>
+          {!isEmpty && <p className="text-sm text-muted">{count} ligue{count !== 1 ? 's' : ''}</p>}
         </div>
         <div className="flex items-center gap-1.5 min-w-0 ml-auto">
           {isSuperAdmin && (
@@ -251,14 +291,16 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
               <ShieldCheck size={20} />
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            aria-label="Ajouter une ligue"
-            className="w-11 h-11 rounded-xl border border-border bg-surfaceHigh flex items-center justify-center shrink-0 active:opacity-70"
-          >
-            <Plus size={20} />
-          </button>
+          {!isEmpty && (
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              aria-label="Ajouter une ligue"
+              className="w-11 h-11 rounded-xl border border-border bg-surfaceHigh flex items-center justify-center shrink-0 active:opacity-70"
+            >
+              <Plus size={20} />
+            </button>
+          )}
           {activeEntry ? (
             <PlayerBadge
               avatar={String(activeEntry.identity?.avatar ?? '🏎️')}
@@ -295,34 +337,12 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
       )}
       {adminCheckLoading && <span className="sr-only" aria-live="polite">Vérification des droits</span>}
 
-      <div className="px-5">
-        {count === 0 ? (
-          <>
-            <div className="card p-6 text-center">
-              <Trophy size={32} className="mx-auto mb-3 text-muted" />
-              <p className="font-bold text-sm">Aucune ligue pour le moment</p>
-              <p className="text-xs text-muted mt-1">Rejoignez ou créez une ligue pour commencer.</p>
-            </div>
-            {/* Écran d'arrivée d'un joueur sans ligue : traité à part (intro de bienvenue). */}
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setActiveTab?.('creer-ligue')}
-                className="card p-4 flex flex-col items-center gap-2 active:opacity-70"
-              >
-                <Plus size={22} />
-                <span className="font-bold text-sm">Nouvelle ligue</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab?.('rejoindre-ligue')}
-                className="card p-4 flex flex-col items-center gap-2 active:opacity-70"
-              >
-                <LogIn size={22} />
-                <span className="font-bold text-sm">Rejoindre une ligue</span>
-              </button>
-            </div>
-          </>
+      <div className={isEmpty ? 'px-5 flex-1 flex flex-col justify-center' : 'px-5'}>
+        {isEmpty ? (
+          <EtatVide
+            onCreate={() => setActiveTab?.('creer-ligue')}
+            onJoin={() => setActiveTab?.('rejoindre-ligue')}
+          />
         ) : (
           <>
             {activeEntry && (
