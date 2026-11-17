@@ -1,26 +1,26 @@
-// Read-only summary of a league's rules — shared between the "Rejoindre une
-// ligue" preview and the "Voir les règles" view for existing members.
-export default function LeagueRulesSummary({ rules = {} }) {
+// Résumé en lecture seule des règles d'une ligue (trois lignes dans une carte) : récapitulatif de
+// Créer une ligue et aperçu de Rejoindre une ligue. Mêmes valeurs par défaut que les Réglages de
+// ligue quand une règle manque (activée, 5 et 10 points).
+function Line({ label, value, red = false }) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between p-3 rounded-xl bg-surfaceHigh/50">
-        <p className="text-sm font-bold">Pénalité modification podium</p>
-        <p className="font-bold text-sm" style={{ color: rules.modificationPenalty?.enabled ? '#E8002D' : undefined }}>
-          {rules.modificationPenalty?.enabled ? `-${rules.modificationPenalty.amount} pts` : 'Désactivée'}
-        </p>
-      </div>
+    <div className="flex items-center justify-between gap-3 py-3 border-b border-border last:border-b-0">
+      <p className="text-sm font-bold min-w-0">{label}</p>
+      <p className={`text-base font-black text-right shrink-0 ${red ? 'text-accent' : 'text-white'}`}>{value}</p>
+    </div>
+  )
+}
 
-      <div className="flex items-center justify-between p-3 rounded-xl bg-surfaceHigh/50">
-        <p className="text-sm font-bold">Pénalité prono après qualifs</p>
-        <p className="font-bold text-sm" style={{ color: rules.postQualifsPenalty?.enabled ? '#E8002D' : undefined }}>
-          {rules.postQualifsPenalty?.enabled ? `-${rules.postQualifsPenalty.amount} pts` : 'Désactivée'}
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between p-3 rounded-xl bg-surfaceHigh/50">
-        <p className="text-sm font-bold">Pronostics masqués avant course</p>
-        <p className="font-bold text-sm">{rules.hidePredictionsBeforeRace?.enabled ? 'Activé' : 'Désactivé'}</p>
-      </div>
+export default function LeagueRulesSummary({ rules = {} }) {
+  const mod = rules.modificationPenalty
+  const late = rules.postQualifsPenalty
+  const modOn = mod?.enabled ?? true
+  const lateOn = late?.enabled ?? true
+  const hideOn = rules.hidePredictionsBeforeRace?.enabled ?? true
+  return (
+    <div className="card px-4">
+      <Line label="Pénalité sur modification" value={modOn ? `−${mod?.amount ?? 5} pts` : 'Désactivée'} red={modOn} />
+      <Line label="Pénalité après les qualifs" value={lateOn ? `−${late?.amount ?? 10} pts` : 'Désactivée'} red={lateOn} />
+      <Line label="Pronostics masqués avant la course" value={hideOn ? 'Activé' : 'Désactivé'} />
     </div>
   )
 }

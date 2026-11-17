@@ -267,12 +267,14 @@ export default function App() {
     )
   }
 
-  // Parcours « Créer une ligue » : plein écran, sans barre du bas (on est au milieu d'une action).
-  if (activeTab === 'creer-ligue') {
+  // Parcours « Créer une ligue » et « Rejoindre une ligue » : plein écran, sans barre du bas
+  // (on est au milieu d'une action).
+  if (activeTab === 'creer-ligue' || activeTab === 'rejoindre-ligue') {
+    const Parcours = activeTab === 'creer-ligue' ? CreerLigue : RejoindreLigue
     return (
       <>
         <ToastContainer toasts={toasts} removeToast={removeToast} />
-        <CreerLigue user={user} setActiveTab={setActiveTab} onSelectLeague={selectActiveLeague} />
+        <Parcours user={user} setActiveTab={setActiveTab} onSelectLeague={selectActiveLeague} />
       </>
     )
   }
@@ -300,8 +302,6 @@ export default function App() {
           : leaguesScreen
       case 'leagues':
         return leaguesScreen
-      case 'rejoindre-ligue':
-        return <RejoindreLigue user={user} setActiveTab={setActiveTab} onSelectLeague={selectActiveLeague} />
       case 'monprofil':
         return <MonProfil addToast={addToast} setActiveTab={setActiveTab} />
       case 'reglages-ligue':

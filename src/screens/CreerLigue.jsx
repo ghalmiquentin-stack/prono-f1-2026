@@ -4,6 +4,7 @@ import { collection, doc, setDoc, getDocs, query, where, serverTimestamp } from 
 import { db } from '../firebase'
 import BottomSheet from '../components/BottomSheet'
 import LeagueRulesFields from '../components/LeagueRulesFields'
+import LeagueRulesSummary from '../components/LeagueRulesSummary'
 import FlowLayout, { FlowButton } from '../components/FlowLayout'
 import ReglesLink from '../components/ReglesLink'
 import InviteCode from '../components/ligues/InviteCode'
@@ -216,11 +217,13 @@ export default function CreerLigue({ user, setActiveTab, onSelectLeague }) {
           <p className={`${SECTION} mt-5 mb-2`}>Ligue</p>
           <div className="card px-4"><RecapLine label="Nom" value={name.trim()} wrap /></div>
           <p className={`${SECTION} mt-5 mb-2`}>Pénalités et pronostics</p>
-          <div className="card px-4">
-            <RecapLine label="Pénalité sur modification" value={modEnabled ? `−${modAmountNum} pts` : 'Désactivée'} red={modEnabled} />
-            <RecapLine label="Pénalité après les qualifs" value={postQualEnabled ? `−${postQualAmountNum} pts` : 'Désactivée'} red={postQualEnabled} />
-            <RecapLine label="Pronostics masqués avant la course" value={hideEnabled ? 'Activé' : 'Désactivé'} />
-          </div>
+          <LeagueRulesSummary
+            rules={{
+              modificationPenalty: { enabled: modEnabled, amount: modAmountNum },
+              postQualifsPenalty: { enabled: postQualEnabled, amount: postQualAmountNum },
+              hidePredictionsBeforeRace: { enabled: hideEnabled },
+            }}
+          />
           {error && <p className="text-accent text-xs font-bold mt-4" role="alert">{error}</p>}
         </>
       )}

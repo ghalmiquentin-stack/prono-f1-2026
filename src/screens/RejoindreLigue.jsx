@@ -1,15 +1,17 @@
 import { useState } from 'react'
-import { ChevronLeft, BookOpen, Users } from 'lucide-react'
+import { Users } from 'lucide-react'
 import { collection, doc, setDoc, getDocs, query, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { upsertDoc } from '../hooks/useFirestore'
-import BottomSheet from '../components/BottomSheet'
+import FlowLayout, { FlowButton } from '../components/FlowLayout'
 import LeagueRulesSummary from '../components/LeagueRulesSummary'
-import ReglesDuJeu from './ReglesDuJeu'
+import ReglesLink from '../components/ReglesLink'
+
+const STEP_COUNT = 2
+const SECTION = 'text-xs font-black uppercase tracking-widest text-white'
 
 export default function RejoindreLigue({ user, setActiveTab, onSelectLeague }) {
   const [step, setStep] = useState(1)
-  const [rulesSheetOpen, setRulesSheetOpen] = useState(false)
 
   const [code, setCode] = useState('')
   const [searching, setSearching] = useState(false)
@@ -29,7 +31,7 @@ export default function RejoindreLigue({ user, setActiveTab, onSelectLeague }) {
   }
 
   const handleSearch = async () => {
-    if (!code.trim()) return
+    if (!code.trim() || searching) return
     setSearching(true)
     setSearchError('')
     try {
@@ -51,7 +53,7 @@ export default function RejoindreLigue({ user, setActiveTab, onSelectLeague }) {
       setLeaguePlayers(players)
       setStep(2)
     } catch (err) {
-      setSearchError('Erreur lors de la recherche. Réessayez.')
+      setSearchError('Erreur lors de la recherche. Réessaie.')
     } finally {
       setSearching(false)
     }
@@ -69,6 +71,9 @@ export default function RejoindreLigue({ user, setActiveTab, onSelectLeague }) {
   const existingMembership = leaguePlayers.find(p => p.authUid === user?.uid)
   const isActiveMember = !!existingMembership && existingMembership.active !== false
   const isInactiveMember = !!existingMembership && existingMembership.active === false
+  // Un joueur banni ne peut pas se réactiver lui-même (firestore.rules) : on le dit avant le bouton
+  // au lieu de le laisser échouer sur une erreur générique.
+  const isBanned = isInactiveMember && existingMembership.banned === true
 
   const handleAccess = () => {
     if (!foundLeague) return
@@ -76,7 +81,7 @@ export default function RejoindreLigue({ user, setActiveTab, onSelectLeague }) {
   }
 
   const handleJoin = async () => {
-    if (!foundLeague || !user?.uid || isFull) return
+    if (!foundLeague || !user?.uid || isFull || isBanned || joining) return
     setJoining(true)
     setJoinError('')
     try {
@@ -94,154 +99,107 @@ export default function RejoindreLigue({ user, setActiveTab, onSelectLeague }) {
       }
       onSelectLeague?.(foundLeague._id)
     } catch (err) {
-      setJoinError("Erreur lors de l'ajout à la ligue. Réessayez.")
+      setJoinError("Erreur lors de l'ajout à la ligue. Réessaie.")
     } finally {
       setJoining(false)
     }
   }
 
   const rules = foundLeague?.rules ?? {}
+  const showRules = !!foundLeague && !isActiveMember && !isBanned && !isFull
+
+  const footer = step === 1 ? (
+    <FlowButton enabled={code.trim() !== '' && !searching} onClick={handleSearch}>
+      {searching ? 'Recherche…' : 'Voir la ligue'}
+    </FlowButton>
+  ) : isActiveMember ? (
+    <FlowButton enabled onClick={handleAccess}>Accéder à la ligue</FlowButton>
+  ) : (
+    <FlowButton enabled={!isFull && !isBanned && !joining} onClick={handleJoin}>
+      {joining ? 'Ajout…' : 'Rejoindre cette ligue'}
+    </FlowButton>
+  )
 
   return (
-    <div className="min-h-[100dvh] bg-bg flex flex-col items-center px-5 py-10 safe-top">
-      <div className="text-center mb-8">
-        <div className="text-6xl mb-4">🏎️</div>
-        <h1 className="text-4xl font-black tracking-tight mb-1">
-          PRONO <span className="text-accent glow-text">F1</span>
-        </h1>
-        <p className="text-2xl font-black tracking-widest text-muted">2026</p>
-        <div className="f1-stripe w-32 mx-auto mt-4" />
-      </div>
+    <FlowLayout
+      step={step}
+      count={STEP_COUNT}
+      onBack={step > 1 ? goBack : null}
+      onClose={() => setActiveTab?.('leagues')}
+      footer={footer}
+    >
+      {/* ── Étape 1 : code ── */}
+      {step === 1 && (
+        <>
+          <h1 className="text-2xl font-black tracking-tight leading-tight">Quel est le code de la ligue ?</h1>
+          <p className="text-sm text-muted mt-1">6 lettres ou chiffres, envoyés par la personne qui t'invite.</p>
+          <input
+            type="text"
+            value={code}
+            onChange={e => { setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')); setSearchError('') }}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            className="input-field text-center text-xl tracking-[0.3em] font-black uppercase mt-5"
+            maxLength={6}
+            placeholder="ABCD12"
+            aria-label="Code d'invitation"
+            autoCapitalize="characters"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            autoFocus
+          />
+          <div role="status" aria-live="polite">
+            {searchError && <p className="text-accent text-xs font-bold mt-3 text-center">{searchError}</p>}
+          </div>
+        </>
+      )}
 
-      <div className="w-full max-w-sm">
-        {/* Header: back / cancel */}
-        <div className="flex items-center justify-between mb-4">
-          {step > 1 ? (
-            <button
-              onClick={goBack}
-              className="flex items-center gap-1 text-xs font-bold text-muted hover:text-white transition-colors"
-            >
-              <ChevronLeft size={16} />
-              Retour
-            </button>
-          ) : (
-            <span />
+      {/* ── Étape 2 : aperçu de la ligue ── */}
+      {step === 2 && foundLeague && (
+        <>
+          <h1 className="text-2xl font-black tracking-tight leading-tight">Voici la ligue</h1>
+          <p className="text-sm text-muted mt-1 mb-5">Vérifie que c'est la bonne avant de la rejoindre.</p>
+
+          <div className="card flex items-center gap-3 px-4 py-3">
+            <span className="w-9 h-9 rounded-lg bg-surfaceHigh flex items-center justify-center text-white shrink-0">
+              <Users size={18} />
+            </span>
+            <div className="min-w-0">
+              <p className="font-black text-lg leading-snug break-words">{foundLeague.name}</p>
+              <p className="text-xs text-muted">{playerCount} joueur{playerCount > 1 ? 's' : ''}</p>
+            </div>
+          </div>
+
+          {isActiveMember && (
+            <p className="text-sm text-muted leading-relaxed mt-4">Tu es déjà dans cette ligue.</p>
           )}
-          <button
-            onClick={() => setActiveTab?.('leagues')}
-            className="text-xs font-bold text-muted hover:text-white transition-colors"
-          >
-            Annuler
-          </button>
-        </div>
-
-        <div className="card p-5 space-y-4">
-          {/* ── Étape 1 : code ── */}
-          {step === 1 && (
-            <>
-              <p className="section-title">Code de la ligue</p>
-              <input
-                type="text"
-                value={code}
-                onChange={e => { setCode(e.target.value.toUpperCase()); setSearchError('') }}
-                onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                className="input-field text-center text-xl tracking-[0.3em] font-black uppercase"
-                maxLength={6}
-                placeholder="ABCD12"
-                autoFocus
-              />
-              {searchError && (
-                <p className="text-accent text-xs font-bold">{searchError}</p>
-              )}
-              <button
-                onClick={handleSearch}
-                disabled={!code.trim() || searching}
-                className={`w-full py-4 rounded-xl font-black text-lg tracking-wide text-white transition-all duration-200 active:scale-95 ${
-                  code.trim() && !searching ? 'bg-accent shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                }`}
-              >
-                {searching ? 'Recherche…' : 'Voir la ligue'}
-              </button>
-            </>
+          {isBanned && (
+            <p className="text-sm text-accent font-bold leading-relaxed mt-4">
+              Tu ne peux pas rejoindre cette ligue. Contacte son admin.
+            </p>
+          )}
+          {!isActiveMember && !isBanned && isFull && (
+            <p className="text-sm text-accent font-bold leading-relaxed mt-4">Cette ligue a atteint sa limite de joueurs.</p>
+          )}
+          {isInactiveMember && !isBanned && !isFull && (
+            <p className="text-sm text-muted leading-relaxed mt-4">
+              Tu as déjà fait partie de cette ligue : ton historique de pronostics sera restauré.
+            </p>
           )}
 
-          {/* ── Étape 2 : aperçu ── */}
-          {step === 2 && foundLeague && (
+          {showRules && (
             <>
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-surfaceHigh/50">
-                <Users size={20} className="text-muted shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-black text-lg truncate">{foundLeague.name}</p>
-                  <p className="text-xs text-muted">
-                    {playerCount}/{foundLeague.maxPlayers} joueurs
-                  </p>
-                </div>
+              <p className={`${SECTION} mt-5 mb-2`}>Règles de la ligue</p>
+              <LeagueRulesSummary rules={rules} />
+              <div className="mt-4">
+                <ReglesLink />
               </div>
-
-              {isActiveMember ? (
-                <>
-                  <p className="text-sm text-muted leading-relaxed">
-                    Vous êtes déjà membre de cette ligue.
-                  </p>
-                  <button
-                    onClick={handleAccess}
-                    className="w-full py-4 rounded-xl font-black text-lg tracking-wide text-white bg-accent shadow-glow-red transition-all duration-200 active:scale-95"
-                  >
-                    Accéder à la ligue
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="section-title mb-0">Règles de la ligue</p>
-                    <button
-                      type="button"
-                      onClick={() => setRulesSheetOpen(true)}
-                      className="flex items-center gap-1.5 text-xs font-bold text-accent shrink-0"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <BookOpen size={14} />
-                        Voir le barème de points
-                      </span>
-                    </button>
-                  </div>
-
-                  <LeagueRulesSummary rules={rules} />
-
-                  {isInactiveMember && !isFull && (
-                    <p className="text-xs text-muted leading-relaxed">
-                      Vous avez déjà fait partie de cette ligue : votre historique de pronostics sera restauré.
-                    </p>
-                  )}
-                  {isFull && (
-                    <p className="text-accent text-xs font-bold">
-                      Cette ligue a atteint sa limite de joueurs.
-                    </p>
-                  )}
-                  {joinError && (
-                    <p className="text-accent text-xs font-bold">{joinError}</p>
-                  )}
-
-                  <button
-                    onClick={handleJoin}
-                    disabled={joining || isFull}
-                    className={`w-full py-4 rounded-xl font-black text-lg tracking-wide text-white transition-all duration-200 active:scale-95 ${
-                      !joining && !isFull ? 'bg-accent shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
-                    }`}
-                  >
-                    {joining ? 'Ajout…' : 'Rejoindre cette ligue'}
-                  </button>
-                </>
-              )}
             </>
           )}
-        </div>
-      </div>
 
-      {/* ── Barème de points ── */}
-      <BottomSheet isOpen={rulesSheetOpen} onClose={() => setRulesSheetOpen(false)} fullHeight>
-        <ReglesDuJeu />
-      </BottomSheet>
-    </div>
+          {joinError && <p className="text-accent text-xs font-bold mt-4" role="alert">{joinError}</p>}
+        </>
+      )}
+    </FlowLayout>
   )
 }

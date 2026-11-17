@@ -4,7 +4,7 @@ import { ChevronLeft, X } from 'lucide-react'
 // barre du haut (Retour à gauche si on n'est pas à la première étape, croix à droite),
 // segments de progression, contenu qui défile, et un pied fixe avec le bouton principal.
 // Plein écran, sans barre de navigation du bas : on est au milieu d'une action.
-export default function FlowLayout({ step, count, onBack, onClose, footer, children }) {
+export default function FlowLayout({ step, count, onBack, onClose, footer, children, hideProgress = false }) {
   return (
     <div className="h-[100dvh] bg-bg flex flex-col safe-top overflow-hidden">
       <div className="flex items-center justify-between px-5 pt-2 shrink-0">
@@ -28,14 +28,14 @@ export default function FlowLayout({ step, count, onBack, onClose, footer, child
         </button>
       </div>
 
-      <div className="px-5 shrink-0">
+      {!hideProgress && <div className="px-5 shrink-0">
         <div className="flex gap-2" aria-hidden="true">
           {Array.from({ length: count }, (_, i) => (
             <div key={i} className={`flex-1 h-1 rounded-full ${i < step ? 'bg-accent' : 'bg-border'}`} />
           ))}
         </div>
         <p className="text-[11px] font-bold uppercase tracking-widest text-muted mt-2">Étape {step} sur {count}</p>
-      </div>
+      </div>}
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-5 pb-4">
         {children}
