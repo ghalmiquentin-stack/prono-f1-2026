@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { ChevronDown, Minus, Plus } from 'lucide-react'
 import Switch from './Switch'
+import { PillOn, PillOff } from './StatusPill'
 
 // Montant d'une pénalité : au plus 3 chiffres, entier.
 const MAX_AMOUNT = 999
-const PILL = 'inline-flex items-center px-2.5 h-6 rounded-full border text-xs font-bold leading-none'
-const PILL_OFF = `${PILL} border-border bg-surfaceHigh text-muted`
-const PILL_ON = `${PILL} border-green-500/40 bg-green-500/15 text-green-400`
 
 // État sous le titre : montant rouge en gras quand une pénalité est activée (comme partout dans l'app),
 // pastille verte « Activé » pour une option sans montant, pastille grise quand c'est désactivé.
@@ -14,11 +12,11 @@ function Status({ hasAmount, checked, amount }) {
   if (hasAmount) {
     return checked
       ? <p className="text-base font-black text-accent mt-0.5">−{amount || 0} pts</p>
-      : <div className="mt-1"><span className={PILL_OFF}>Désactivée</span></div>
+      : <div className="mt-1"><PillOff>Désactivée</PillOff></div>
   }
   return (
     <div className="mt-1">
-      {checked ? <span className={PILL_ON}>Activé</span> : <span className={PILL_OFF}>Désactivé</span>}
+      {checked ? <PillOn>Activé</PillOn> : <PillOff>Désactivé</PillOff>}
     </div>
   )
 }
