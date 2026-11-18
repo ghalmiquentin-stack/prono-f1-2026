@@ -35,6 +35,8 @@ export default function App() {
   // Dernier écran visité avant Mon profil : c'est là que mène « Retour » (le profil s'ouvre depuis la
   // pastille du joueur de presque tous les écrans).
   const tabBeforeProfilRef = useRef('accueil')
+  // Idem pour la page Règles (ouverte depuis Mon profil ou le Classement).
+  const tabBeforeReglesRef = useRef('accueil')
   // Intro de bienvenue : demandée par ProfilSetup juste avant la création du profil,
   // jamais persistée (un compte déjà créé ne la voit pas). Remise à zéro si le
   // compte connecté change, pour ne pas la montrer au compte suivant.
@@ -119,7 +121,10 @@ export default function App() {
   }, [pendingActiveLeagueId])
 
   useEffect(() => {
-    if (activeTab !== 'monprofil') tabBeforeProfilRef.current = activeTab
+    // La page Règles est exclue : depuis le profil elle mène à « Retour » vers le profil, et le profil
+    // doit continuer de ramener à l'écran d'avant, pas à la page Règles (sinon boucle).
+    if (activeTab !== 'monprofil' && activeTab !== 'reglages-du-jeu') tabBeforeProfilRef.current = activeTab
+    if (activeTab !== 'reglages-du-jeu') tabBeforeReglesRef.current = activeTab
   }, [activeTab])
 
   // Un changement de compte connecté annule toute intro encore demandée.
@@ -322,7 +327,7 @@ export default function App() {
           />
         )
       case 'reglages-du-jeu':
-        return <ReglesDuJeu leagues={leagueOptions} activeLeagueId={effectiveActiveLeagueId} />
+        return <ReglesDuJeu leagues={leagueOptions} activeLeagueId={effectiveActiveLeagueId} onBack={() => setActiveTab(tabBeforeReglesRef.current)} />
       case 'admin':
         return <ReglagesSuperAdmin addToast={addToast} />
       default:

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ChevronLeft } from 'lucide-react'
 import {
   POINTS_EXACT,
   POINTS_PODIUM,
@@ -147,13 +148,24 @@ function LeagueRulesBlock({ leagues, activeLeagueId }) {
 // Page « Règles ». `leagues` ([{ id, name, rules }]) et `activeLeagueId`
 // alimentent le bloc « Ta ligue » ; sans eux (écrans Créer / Rejoindre une
 // ligue, où ce composant s'ouvre en feuille), seul le contenu commun à toutes
-// les ligues s'affiche.
-export default function ReglesDuJeu({ leagues = null, activeLeagueId = null }) {
+// les ligues s'affiche. `onBack` (page seulement, pas en feuille) ajoute un
+// bouton « Retour » vers l'écran d'où l'on vient (Mon profil, Classement).
+export default function ReglesDuJeu({ leagues = null, activeLeagueId = null, onBack = null }) {
   const hasLeagues = Array.isArray(leagues) && leagues.length > 0
 
   return (
     <div className="pb-4">
-      <div className="px-5 pt-5 pb-1">
+      <div className={`px-5 pb-1 ${onBack ? 'pt-4' : 'pt-5'}`}>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1 text-sm font-bold text-muted -ml-1 pr-3 active:opacity-70"
+            style={{ minHeight: 44 }}
+          >
+            <ChevronLeft size={18} />Retour
+          </button>
+        )}
         <h1 className="text-2xl font-black tracking-tight">Règles</h1>
         <p className="text-sm text-muted">L'essentiel, en une minute</p>
       </div>
