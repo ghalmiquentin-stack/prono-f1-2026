@@ -143,3 +143,20 @@
 .divider {
   @apply border-t border-border my-4;
 }
+
+/* Points ronds pour un mot de passe masqué : la police Titillium Web dessine un point CARRÉ.
+   On utilise Verdana (ronds) ; ascent/descent-override donnent au curseur la même hauteur que
+   dans les autres champs. À mettre sur un champ UNIQUEMENT quand le mot de passe est masqué
+   (pas quand il est affiché en clair). */
+@font-face {
+  font-family: 'PwdMask';
+  src: local('Verdana'), local('Verdana-Regular');
+  ascent-override: 113%;
+  descent-override: 39%;
+  line-gap-override: 0%;
+}
+
+.pwd-mask {
+  font-family: 'PwdMask', Verdana, system-ui, sans-serif;
+  letter-spacing: 0.05em;
+}

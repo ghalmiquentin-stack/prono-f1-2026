@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight, KeyRound, BookOpen, LogOut, Check, Pencil } from 'lucide-react'
-import { sendPasswordResetEmail, deleteUser } from 'firebase/auth'
+import { sendPasswordResetEmail, deleteUser, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuth, formatAuthError } from '../hooks/useAuth'
 import { useCollection, useDocument, where, upsertDoc } from '../hooks/useFirestore'
@@ -9,6 +9,7 @@ import BottomSheet from '../components/BottomSheet'
 import Skeleton from '../components/Skeleton'
 import EntryRow from '../components/EntryRow'
 import DeleteAccountSheet from '../components/DeleteAccountSheet'
+import ChangePasswordForm from '../components/ChangePasswordForm'
 
 // Hauteur de la barre de navigation du bas : le bouton « Enregistrer » se pose juste au-dessus.
 const NAV_HEIGHT = 71
@@ -72,7 +73,7 @@ export default function MonProfil({ addToast, setActiveTab, onBack }) {
   const { data: identity, loading: identityLoading } = useDocument('profiles', user?.uid ?? null)
   const loading = playerLoading || identityLoading
 
-  const [screen, setScreen] = useState('hub') // 'hub' | 'edit'
+  const [screen, setScreen] = useState('hub') // 'hub' | 'edit' | 'password'
   const [draft, setDraft] = useState(null)
   const [profileSaving, setProfileSaving] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
@@ -132,6 +133,14 @@ export default function MonProfil({ addToast, setActiveTab, onBack }) {
     }
   }
 
+  // Changement de mot de passe dans l'app : Firebase exige une connexion récente, donc on ré-authentifie
+  // d'abord avec le mot de passe actuel, puis on change. Les erreurs sont traitées par le formulaire.
+  const changePassword = async (current, next) => {
+    const credential = EmailAuthProvider.credential(user.email, current)
+    await reauthenticateWithCredential(user, credential)
+    await updatePassword(user, next)
+  }
+
   const handleDeleteAccount = async () => {
     if (!user || deleting) return
 
@@ -165,6 +174,25 @@ export default function MonProfil({ addToast, setActiveTab, onBack }) {
     return (
       <div className="px-5 pt-5 pb-4 space-y-4">
         <Skeleton rows={2} height="h-28" />
+      </div>
+    )
+  }
+
+  // ── Sous-écran : Changer le mot de passe ──
+  if (screen === 'password') {
+    return (
+      <div>
+        <div className="px-5 pt-4 pb-3">
+          <BackButton label="Mon profil" onClick={() => setScreen('hub')} />
+          <h1 className="text-2xl font-black tracking-tight leading-tight">Changer le mot de passe</h1>
+          <p className="text-sm text-muted mt-1">Tu restes connecté après le changement.</p>
+        </div>
+        <ChangePasswordForm
+          onSubmit={changePassword}
+          onDone={() => { addToast?.('Mot de passe modifié', 'success'); setScreen('hub') }}
+          onResetEmail={handlePasswordReset}
+          resetSending={resetSending}
+        />
       </div>
     )
   }
@@ -289,10 +317,8 @@ export default function MonProfil({ addToast, setActiveTab, onBack }) {
             <EntryRow
               icon={<KeyRound size={18} />}
               title="Changer le mot de passe"
-              sub={resetSending ? 'Envoi en cours…' : `Un e-mail est envoyé à ${user?.email}`}
-              onClick={handlePasswordReset}
-              disabled={resetSending}
-              chevron={false}
+              sub="Avec ton mot de passe actuel"
+              onClick={() => setScreen('password')}
             />
           )}
           <EntryRow
