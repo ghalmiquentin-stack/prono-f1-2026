@@ -32,6 +32,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('accueil')
   const [selectedLeagueId, setSelectedLeagueId] = useState(null)
   const [toasts, setToasts] = useState([])
+  // Dernier écran visité avant Mon profil : c'est là que mène « Retour » (le profil s'ouvre depuis la
+  // pastille du joueur de presque tous les écrans).
+  const tabBeforeProfilRef = useRef('accueil')
   // Intro de bienvenue : demandée par ProfilSetup juste avant la création du profil,
   // jamais persistée (un compte déjà créé ne la voit pas). Remise à zéro si le
   // compte connecté change, pour ne pas la montrer au compte suivant.
@@ -114,6 +117,10 @@ export default function App() {
     const timeout = setTimeout(() => setPendingActiveLeagueId(null), 5000)
     return () => clearTimeout(timeout)
   }, [pendingActiveLeagueId])
+
+  useEffect(() => {
+    if (activeTab !== 'monprofil') tabBeforeProfilRef.current = activeTab
+  }, [activeTab])
 
   // Un changement de compte connecté annule toute intro encore demandée.
   useEffect(() => {
@@ -303,7 +310,7 @@ export default function App() {
       case 'leagues':
         return leaguesScreen
       case 'monprofil':
-        return <MonProfil addToast={addToast} setActiveTab={setActiveTab} />
+        return <MonProfil addToast={addToast} setActiveTab={setActiveTab} onBack={() => setActiveTab(tabBeforeProfilRef.current)} />
       case 'reglages-ligue':
         return (
           <ReglagesLigue
