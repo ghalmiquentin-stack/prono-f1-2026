@@ -5,10 +5,35 @@ import { useCollection, useDocument, upsertDoc } from '../hooks/useFirestore'
 import { resolveMeetingKey } from '../utils/openf1'
 import { formatLapDuration } from '../utils/formatLapDuration'
 import { TEAMS } from '../data/drivers'
+import { ChevronLeft, ChevronDown, Zap, RefreshCw, Check } from 'lucide-react'
 import BottomSheet from '../components/BottomSheet'
 import ConfirmModal from '../components/ConfirmModal'
+import EntryRow from '../components/EntryRow'
+import { PillOn, PillOff } from '../components/StatusPill'
 
-export default function ReglagesSuperAdmin({ addToast }) {
+const SECTION = 'text-xs font-black uppercase tracking-widest text-white'
+const RED_PILL = 'inline-flex items-center px-2.5 h-6 rounded-full border text-xs font-bold leading-none whitespace-nowrap border-accent/40 bg-accent/15 text-accent'
+
+// Ligne d'un GP : drapeau, nom et date, sous-titre facultatif, pastille d'état. Non cliquable si `onClick` est nul.
+function RaceRow({ race, date, sub, right, onClick }) {
+  const Tag = onClick ? 'button' : 'div'
+  return (
+    <Tag
+      {...(onClick ? { type: 'button', onClick } : {})}
+      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left ${onClick ? 'active:bg-surfaceHigh/50' : ''}`}
+      style={{ minHeight: 60 }}
+    >
+      <span className="text-2xl shrink-0">{race.flag}</span>
+      <div className="flex-1 min-w-0">
+        <p className="font-black text-base leading-snug">GP {race.name} <span className="text-xs text-muted font-bold">· {date}</span></p>
+        {sub && <p className="text-xs text-muted break-words">{sub}</p>}
+      </div>
+      {right}
+    </Tag>
+  )
+}
+
+export default function ReglagesSuperAdmin({ addToast, onBack }) {
   // ── Admin auth (custom claim) ─────────────────────────────────────────────
   const { user } = useAuth()
   const [isAdmin, setIsAdmin] = useState(false)
@@ -25,6 +50,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
 
   // ── Danger confirm modals ────────────────────────────────────────────────
   const [resetTarget, setResetTarget] = useState(null) // race pending a reset confirmation
+  const [upcomingOpen, setUpcomingOpen] = useState(false)
 
   // ── OpenF1 sync ───────────────────────────────────────────────────────────
   const [openf1Syncing, setOpenf1Syncing] = useState(false)
@@ -245,7 +271,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
         P2: resolve(top3.find(r => r.position === 2)?.driver_number),
         P3: resolve(top3.find(r => r.position === 3)?.driver_number),
       })
-      setOpenf1ResultMsg({ type: 'success', text: 'Résultat récupéré — vérifiez avant de valider' })
+      setOpenf1ResultMsg({ type: 'success', text: 'Résultat récupéré. Vérifie avant de valider.' })
     } catch (err) {
       setOpenf1ResultMsg({ type: 'error', text: err.message })
     } finally {
@@ -352,104 +378,148 @@ export default function ReglagesSuperAdmin({ addToast }) {
     }
   }
 
+  // ── Affichage : classement des GP ─────────────────────────────────────────
+  // « À traiter » = un GP passé sans résultat ; « Résultats » = résultat saisi ou GP annulé ;
+  // « À venir » = le reste. Aucune écriture ici : seul l'affichage change.
+  const todayStr = new Date().toLocaleDateString('en-CA') // AAAA-MM-JJ, jour local
+  const racesTodo = sortedRaces.filter(r =>
+    r.status !== 'cancelled' && !r.result && (r.autoFetchGaveUp === true || (r.date && r.date < todayStr))
+  )
+  const racesDone = sortedRaces.filter(r => r.status === 'cancelled' || !!r.result)
+  const racesUpcoming = sortedRaces.filter(r => !racesTodo.includes(r) && !racesDone.includes(r))
+
+  const shortDate = (r) => new Date(r.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  const fullDate = (iso) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+  const resultComplete = !!(resultDraft.P1 && resultDraft.P2 && resultDraft.P3)
+  const qualifying = selectedRace?.qualifying
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="pb-4">
-      <div className="px-5 pt-5 pb-4">
-        <h1 className="text-2xl font-black tracking-tight">Administration</h1>
+      <div className="px-5 pt-4 pb-3">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1 text-sm font-bold text-muted -ml-1 pr-3 active:opacity-70"
+            style={{ minHeight: 44 }}
+          >
+            <ChevronLeft size={18} />Mes ligues
+          </button>
+        )}
+        <h1 className="text-2xl font-black tracking-tight leading-tight">Administration</h1>
+        <p className="text-sm text-muted">Réservé au super admin</p>
       </div>
+
+      {adminCheckDone && !isAdmin && (
+        <div className="px-5">
+          <p className="text-sm text-muted leading-relaxed">Cet écran est réservé au super admin.</p>
+        </div>
+      )}
 
       {/* ── SECTION ADMIN (custom claim gated) ── */}
       {adminCheckDone && isAdmin && (
-        <div className="px-5 mb-5">
-          <p className="section-title">Section Admin</p>
-
-          {/* Auth header */}
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs text-green-400 font-bold">✓ Accès administrateur</p>
-          </div>
-
-          {/* ── Résultats officiels ── */}
-          <p className="section-title">Résultats officiels</p>
-          <div className="space-y-2">
-            {sortedRaces.map(race => (
-              <div key={race.id} className="card p-3 flex items-center gap-3">
-                <span className="text-xl">{race.flag}</span>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-bold text-sm">{race.name}</p>
-                    {race.status === 'completed' && race.resultSource === 'auto' && (
-                      <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-bold shrink-0">
-                        Récupéré automatiquement (OpenF1)
-                      </span>
-                    )}
-                    {race.status === 'upcoming' && race.autoFetchGaveUp === true && (
-                      <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full font-bold shrink-0">
-                        Non récupéré automatiquement — saisie manuelle recommandée
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted">
-                    {new Date(race.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                  </p>
-                  {race.result && (
-                    <p className="text-xs text-green-400 font-bold mt-0.5">
-                      {race.result.P1} · {race.result.P2} · {race.result.P3}
-                    </p>
-                  )}
-                </div>
-                {race.status === 'cancelled' ? (
-                  <span className="text-xs bg-red-500/20 text-red-400 font-bold px-3 py-1.5 rounded-lg">
-                    Annulé
-                  </span>
-                ) : (
-                  <div className="flex flex-col gap-1">
-                    <button
-                      onClick={() => openResultSheet(race)}
-                      className="text-xs bg-accent/20 text-accent font-bold px-3 py-1.5 rounded-lg"
-                    >
-                      {race.result ? 'Modifier' : 'Résultat'}
-                    </button>
-                    {race.result && (
-                      <button
-                        onClick={() => setResetTarget(race)}
-                        className="text-xs text-muted font-bold px-3 py-1.5 rounded-lg border border-border"
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                )}
+        <div className="px-5 space-y-6">
+          {/* ── À traiter ── */}
+          <section>
+            <p className={`${SECTION} mb-2`}>À traiter</p>
+            {racesTodo.length > 0 ? (
+              <div className="card divide-y divide-border overflow-hidden">
+                {racesTodo.map(race => (
+                  <RaceRow
+                    key={race.id}
+                    race={race}
+                    date={shortDate(race)}
+                    sub={race.autoFetchGaveUp === true
+                      ? 'Récupération automatique abandonnée après 24 h'
+                      : 'Résultat attendu, récupération automatique en cours'}
+                    right={race.autoFetchGaveUp === true ? <span className={RED_PILL}>À saisir</span> : <PillOff>En attente</PillOff>}
+                    onClick={() => openResultSheet(race)}
+                  />
+                ))}
               </div>
-            ))}
-          </div>
-
-          {/* ── SYNCHRONISATION OPENF1 ── */}
-          <div className="mt-6 rounded-2xl border border-border p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-black uppercase tracking-widest text-accent">⚡ Synchronisation OpenF1</p>
-              {openf1Config?.lastSync && (
-                <p className="text-[10px] text-muted">
-                  Sync : {new Date(openf1Config.lastSync).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                </p>
-              )}
-            </div>
-            {openf1Config?.driverCount != null && (
-              <p className="text-xs text-muted">{openf1Config.driverCount} pilotes en base</p>
+            ) : (
+              <div className="card flex items-center gap-3 px-4 py-3">
+                <span className="w-9 h-9 rounded-lg bg-green-500/10 border border-green-500/40 flex items-center justify-center text-green-400 shrink-0"><Check size={18} /></span>
+                <p className="text-sm font-bold">Rien à traiter : tous les GP passés ont un résultat.</p>
+              </div>
             )}
-            <button
-              onClick={syncDriversFromOpenF1}
-              disabled={openf1Syncing}
-              className="w-full flex items-center gap-3 p-3 rounded-xl border border-accent/30 bg-accent/10 active:opacity-70 text-left"
-            >
-              <span className="text-xl">{openf1Syncing ? '⏳' : '🔄'}</span>
-              <div>
-                <p className="font-bold text-sm">{openf1Syncing ? 'Synchronisation…' : 'Sync pilotes depuis OpenF1'}</p>
-                <p className="text-xs text-muted">session_key={OPENF1_SESSION_KEY} · Grille 2026</p>
+          </section>
+
+          {/* ── Résultats ── */}
+          <section>
+            <p className={`${SECTION} mb-2`}>Résultats <span className="text-muted font-bold">· {racesDone.length}</span></p>
+            {racesDone.length > 0 ? (
+              <div className="card divide-y divide-border overflow-hidden">
+                {racesDone.map(race => (
+                  <RaceRow
+                    key={race.id}
+                    race={race}
+                    date={shortDate(race)}
+                    sub={race.result ? `${race.result.P1} · ${race.result.P2} · ${race.result.P3}` : null}
+                    right={
+                      race.status === 'cancelled' ? <PillOff>Annulé</PillOff>
+                      : race.resultSource === 'auto' ? <PillOn>Auto</PillOn>
+                      : race.resultSource === 'manual' ? <PillOff>Manuel</PillOff>
+                      : null
+                    }
+                    onClick={race.status === 'cancelled' ? null : () => openResultSheet(race)}
+                  />
+                ))}
               </div>
+            ) : (
+              <p className="text-sm text-muted">Aucun résultat pour l'instant.</p>
+            )}
+          </section>
+
+          {/* ── À venir (replié) ── */}
+          <section>
+            <button
+              type="button"
+              onClick={() => setUpcomingOpen(o => !o)}
+              aria-expanded={upcomingOpen}
+              className="w-full flex items-center justify-between"
+              style={{ minHeight: 44 }}
+            >
+              <p className={SECTION}>À venir <span className="text-muted font-bold">· {racesUpcoming.length}</span></p>
+              <ChevronDown size={18} className={`text-muted transition-transform ${upcomingOpen ? 'rotate-180' : ''}`} />
             </button>
+            {upcomingOpen && (
+              <div className="card divide-y divide-border overflow-hidden mt-1">
+                {racesUpcoming.map(race => (
+                  <RaceRow
+                    key={race.id}
+                    race={race}
+                    date={shortDate(race)}
+                    right={<PillOff>Pas encore couru</PillOff>}
+                    onClick={() => openResultSheet(race)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* ── Maintenance ── */}
+          <section>
+            <p className={`${SECTION} mb-2`}>Maintenance</p>
+            <div className="card overflow-hidden">
+              <EntryRow
+                icon={<RefreshCw size={18} className={openf1Syncing ? 'animate-spin' : ''} />}
+                title={openf1Syncing ? 'Synchronisation…' : 'Synchroniser les pilotes'}
+                sub={[
+                  'Photos et écuries depuis OpenF1',
+                  openf1Config?.driverCount != null ? `${openf1Config.driverCount} pilotes` : null,
+                  openf1Config?.lastSync ? `dernière synchro ${fullDate(openf1Config.lastSync)}` : null,
+                ].filter(Boolean).join(' · ')}
+                onClick={syncDriversFromOpenF1}
+                chevron={false}
+                disabled={openf1Syncing}
+              />
+            </div>
+            <p className="text-[11px] text-muted mt-1.5">Session de référence : {OPENF1_SESSION_KEY} (Australie, course)</p>
             {openf1SyncMsg && (
-              <p className={`text-xs font-bold px-3 py-2 rounded-lg ${
+              <p className={`text-xs font-bold px-3 py-2 rounded-lg mt-2 ${
                 openf1SyncMsg.type === 'success'
                   ? 'bg-green-500/10 text-green-400'
                   : 'bg-red-500/10 text-red-400'
@@ -457,7 +527,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
                 {openf1SyncMsg.type === 'success' ? '✓ ' : '✕ '}{openf1SyncMsg.text}
               </p>
             )}
-          </div>
+          </section>
         </div>
       )}
 
@@ -465,110 +535,112 @@ export default function ReglagesSuperAdmin({ addToast }) {
       <BottomSheet
         isOpen={resultSheetOpen}
         onClose={closeResultSheet}
-        title={selectedRace ? `Résultat : GP ${selectedRace.name} ${selectedRace.flag}` : ''}
+        title={selectedRace ? `GP ${selectedRace.name} ${selectedRace.flag}` : ''}
         fullHeight
       >
         {selectedRace && (
           <div className="p-5 pb-10 space-y-5">
-            <p className="section-title">Podium officiel</p>
-
-            {/* ── OpenF1 fetch button ── */}
-            <button
-              onClick={fetchResultFromOpenF1}
-              disabled={openf1ResultFetching}
-              className="w-full flex items-center gap-3 p-3 rounded-xl border border-accent/30 bg-accent/10 active:opacity-70 text-left"
-            >
-              <span className="text-xl">{openf1ResultFetching ? '⏳' : '⚡'}</span>
-              <div>
-                <p className="font-bold text-sm">{openf1ResultFetching ? 'Récupération…' : 'Récupérer depuis OpenF1'}</p>
-                <p className="text-xs text-muted">Pré-remplit P1/P2/P3 automatiquement</p>
+            {/* ── Podium officiel ── */}
+            <div>
+              <p className={`${SECTION} mb-2`}>Podium officiel</p>
+              <div className="card overflow-hidden">
+                <EntryRow
+                  icon={<Zap size={18} className={openf1ResultFetching ? 'animate-pulse' : ''} />}
+                  title={openf1ResultFetching ? 'Récupération…' : 'Récupérer depuis OpenF1'}
+                  sub="Pré-remplit le podium, tu vérifies avant de valider"
+                  onClick={fetchResultFromOpenF1}
+                  chevron={false}
+                  disabled={openf1ResultFetching}
+                />
               </div>
-            </button>
-            {openf1ResultMsg && (
-              <p className={`text-xs font-bold px-3 py-2 rounded-lg -mt-2 ${
-                openf1ResultMsg.type === 'success'
-                  ? 'bg-green-500/10 text-green-400'
-                  : 'bg-red-500/10 text-red-400'
-              }`}>
-                {openf1ResultMsg.type === 'success' ? '✓ ' : '✕ '}{openf1ResultMsg.text}
-              </p>
-            )}
+              {openf1ResultMsg && (
+                <p className={`text-xs font-bold px-3 py-2 rounded-lg mt-2 ${
+                  openf1ResultMsg.type === 'success'
+                    ? 'bg-green-500/10 text-green-400'
+                    : 'bg-red-500/10 text-red-400'
+                }`}>
+                  {openf1ResultMsg.type === 'success' ? '✓ ' : '✕ '}{openf1ResultMsg.text}
+                </p>
+              )}
 
-            {/* ── OpenF1 qualifying fetch button ── */}
-            <button
-              onClick={fetchQualifyingFromOpenF1}
-              disabled={openf1QualFetching}
-              className="w-full flex items-center gap-3 p-3 rounded-xl border border-accent/30 bg-accent/10 active:opacity-70 text-left"
-            >
-              <span className="text-xl">{openf1QualFetching ? '⏳' : '⚡'}</span>
-              <div>
-                <p className="font-bold text-sm">{openf1QualFetching ? 'Récupération…' : 'Récupérer les qualifs depuis OpenF1'}</p>
-                <p className="text-xs text-muted">Enregistre le top 3 des qualifications</p>
+              <div className="space-y-2 mt-3">
+                {['P1', 'P2', 'P3'].map((pos, i) => {
+                  const driver = resultDraft[pos]
+                  return (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => { setResultPosition(pos); setDriverPickerOpen(true) }}
+                      className={`w-full flex items-center gap-3 px-4 rounded-xl border-2 text-left active:scale-[0.99] ${driver ? 'border-accent/60 bg-accent/10' : 'border-dashed border-border'}`}
+                      style={{ minHeight: 56 }}
+                    >
+                      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-bg font-black text-sm shrink-0 ${
+                        i === 0 ? 'bg-gold' : i === 1 ? 'bg-silver' : 'bg-bronze'
+                      }`}>{i + 1}</span>
+                      <span className={`flex-1 ${driver ? 'font-bold' : 'text-muted text-sm'}`}>{driver ?? `Choisir le ${pos}`}</span>
+                    </button>
+                  )
+                })}
               </div>
-            </button>
-            {/* Provenance badge — mirrors the "Récupéré automatiquement (OpenF1)"
-                badge in the Résultats officiels list above. No badge at all
-                for pre-existing data with no `source` field. */}
-            {selectedRace?.qualifying?.source && (
-              <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                selectedRace.qualifying.source === 'auto'
-                  ? 'bg-green-500/20 text-green-400'
-                  : 'bg-surfaceHigh text-muted'
-              }`}>
-                {selectedRace.qualifying.source === 'auto' ? 'Récupérées automatiquement' : 'Saisies manuellement'}
-                {selectedRace.qualifying.fetchedAt &&
-                  ` · ${new Date(selectedRace.qualifying.fetchedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
-              </span>
-            )}
-            {openf1QualMsg && (
-              <p className={`text-xs font-bold px-3 py-2 rounded-lg -mt-2 ${
-                openf1QualMsg.type === 'success'
-                  ? 'bg-green-500/10 text-green-400'
-                  : 'bg-red-500/10 text-red-400'
-              }`}>
-                {openf1QualMsg.type === 'success' ? '✓ ' : '✕ '}{openf1QualMsg.text}
-              </p>
-            )}
 
-            <div className="space-y-3">
-              {['P1', 'P2', 'P3'].map((pos, i) => {
-                const driver = resultDraft[pos]
-                return (
-                  <button
-                    key={pos}
-                    onClick={() => { setResultPosition(pos); setDriverPickerOpen(true) }}
-                    className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all active:scale-[0.98]
-                      ${driver ? 'border-accent/60 bg-accent/10' : 'border-dashed border-border'}
-                    `}
-                  >
-                    <div className={`position-badge text-bg font-black text-sm shrink-0 ${
-                      i === 0 ? 'bg-gold' : i === 1 ? 'bg-silver' : 'bg-bronze'
-                    }`}>
-                      {i + 1}
-                    </div>
-                    {driver ? (
-                      <>
-                        <span className="font-bold flex-1 text-left">{driver}</span>
-                        <span className="text-muted text-sm" onClick={e => { e.stopPropagation(); setResultDraft(p => ({ ...p, [pos]: null })) }}>✕</span>
-                      </>
-                    ) : (
-                      <span className="text-muted text-sm flex-1 text-left">Sélectionner le {pos}</span>
-                    )}
-                  </button>
-                )
-              })}
+              <button
+                type="button"
+                onClick={handleValidateResult}
+                disabled={!resultComplete || saving}
+                className={`w-full mt-4 rounded-xl font-black text-base ${
+                  resultComplete && !saving
+                    ? 'bg-accent text-white shadow-glow-red active:scale-95'
+                    : 'bg-surfaceHigh text-muted'
+                }`}
+                style={{ minHeight: 48 }}
+              >
+                {saving ? 'Enregistrement…' : 'Valider le résultat'}
+              </button>
             </div>
-            <button
-              onClick={handleValidateResult}
-              disabled={!resultDraft.P1 || !resultDraft.P2 || !resultDraft.P3 || saving}
-              className={`w-full py-4 rounded-xl font-black text-lg transition-all active:scale-95 ${
-                resultDraft.P1 && resultDraft.P2 && resultDraft.P3 && !saving
-                  ? 'bg-accent text-white shadow-glow-red'
-                  : 'bg-surfaceHigh text-muted cursor-not-allowed'
-              }`}
-            >
-              {saving ? 'Enregistrement...' : 'Valider le résultat'}
-            </button>
+
+            {/* ── Qualifications ── */}
+            <div>
+              <div className="flex items-center justify-between gap-x-3 gap-y-1 flex-wrap mb-2">
+                <p className={SECTION}>Qualifications</p>
+                {qualifying?.source && (
+                  <span className="whitespace-nowrap">
+                    {qualifying.source === 'auto'
+                      ? <PillOn>Récupérées automatiquement{qualifying.fetchedAt ? ` · ${fullDate(qualifying.fetchedAt)}` : ''}</PillOn>
+                      : <PillOff>Saisies manuellement{qualifying.fetchedAt ? ` · ${fullDate(qualifying.fetchedAt)}` : ''}</PillOff>}
+                  </span>
+                )}
+              </div>
+              <div className="card overflow-hidden">
+                <EntryRow
+                  icon={<Zap size={18} className={openf1QualFetching ? 'animate-pulse' : ''} />}
+                  title={openf1QualFetching ? 'Récupération…' : 'Récupérer les qualifs depuis OpenF1'}
+                  sub="Enregistre le top 3 tout de suite, sans validation"
+                  onClick={fetchQualifyingFromOpenF1}
+                  chevron={false}
+                  disabled={openf1QualFetching}
+                />
+              </div>
+              {openf1QualMsg && (
+                <p className={`text-xs font-bold px-3 py-2 rounded-lg mt-2 ${
+                  openf1QualMsg.type === 'success'
+                    ? 'bg-green-500/10 text-green-400'
+                    : 'bg-red-500/10 text-red-400'
+                }`}>
+                  {openf1QualMsg.type === 'success' ? '✓ ' : '✕ '}{openf1QualMsg.text}
+                </p>
+              )}
+            </div>
+
+            {selectedRace.result && (
+              <button
+                type="button"
+                onClick={() => setResetTarget(selectedRace)}
+                className="w-full text-sm font-bold text-muted underline underline-offset-4 decoration-border"
+                style={{ minHeight: 44 }}
+              >
+                Réinitialiser le résultat
+              </button>
+            )}
           </div>
         )}
       </BottomSheet>
@@ -576,7 +648,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
       <BottomSheet
         isOpen={driverPickerOpen}
         onClose={() => { setDriverPickerOpen(false); setResultPosition(null) }}
-        title={`Sélectionner ${resultPosition}`}
+        title={`Choisir le ${resultPosition}`}
         fullHeight
       >
         <div className="p-4 pb-10">
@@ -593,12 +665,14 @@ export default function ReglagesSuperAdmin({ addToast }) {
                   return (
                     <button
                       key={driver}
+                      type="button"
                       onClick={() => selectDriver(driver)}
                       className={`p-3 rounded-xl border text-left transition-all active:scale-95 ${
                         isCurrent ? 'border-accent bg-accent/20' :
                         isSelected ? 'border-muted/30 bg-surfaceHigh/30 opacity-50' :
                         'border-border bg-surfaceHigh hover:border-muted'
                       }`}
+                      style={{ minHeight: 56 }}
                     >
                       <p className="font-bold text-sm">{driver}</p>
                       <div className="flex items-center gap-1 mt-0.5">
@@ -619,14 +693,17 @@ export default function ReglagesSuperAdmin({ addToast }) {
         isOpen={!!resetTarget}
         title="Réinitialiser ce résultat ?"
         message={resetTarget
-          ? `Le résultat actuel du GP ${resetTarget.name} sera effacé, et les points déjà calculés pour ce GP seront recalculés (donc perdus) pour tous les joueurs de toutes les ligues.`
+          ? `Le résultat du GP ${resetTarget.name} sera effacé, et les points déjà calculés pour ce GP seront recalculés (donc perdus) pour tous les joueurs de toutes les ligues.`
           : ''}
         confirmLabel="Réinitialiser"
         danger
         onConfirm={async () => {
           const race = resetTarget
           setResetTarget(null)
-          if (race) await resetRaceResult(race)
+          if (race) {
+            await resetRaceResult(race)
+            closeResultSheet()
+          }
         }}
         onCancel={() => setResetTarget(null)}
       />
@@ -657,7 +734,7 @@ export default function ReglagesSuperAdmin({ addToast }) {
                 ? ' (saisie manuellement'
                 : ' (récupération') +
             (selectedRace.qualifying.fetchedAt
-              ? ` le ${new Date(selectedRace.qualifying.fetchedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })})`
+              ? ` le ${fullDate(selectedRace.qualifying.fetchedAt)})`
               : ')') +
             '. La remplacer écrasera définitivement cette donnée.'
           : ''}

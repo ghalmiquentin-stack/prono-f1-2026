@@ -329,7 +329,7 @@ export default function App() {
       case 'reglages-du-jeu':
         return <ReglesDuJeu leagues={leagueOptions} activeLeagueId={effectiveActiveLeagueId} onBack={() => setActiveTab(tabBeforeReglesRef.current)} />
       case 'admin':
-        return <ReglagesSuperAdmin addToast={addToast} />
+        return <ReglagesSuperAdmin addToast={addToast} onBack={() => setActiveTab('leagues')} />
       default:
         return hasAnyLeague
           ? <Accueil key={effectiveActiveLeagueId} leagueOptions={leagueOptions} onSwitchLeague={activateLeague} currentPlayerId={playerId} setActiveTab={setActiveTab} activeLeagueName={activeLeagueName} activeLeagueId={effectiveActiveLeagueId} addToast={addToast} />
