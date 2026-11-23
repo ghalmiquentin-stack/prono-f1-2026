@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Star, AlertTriangle } from 'lucide-react'
 import Portrait from './Portrait'
 import PredictionTimestamps from '../PredictionTimestamps'
+import AdminNote, { AdminMention } from '../AdminEntry'
+import { adminEntryOf } from '../../utils/adminInterventions'
 import { driverCode, limitListWithMe } from '../../utils/sheetStats'
 import { summarizePenalties, penaltyLines } from '../../utils/penalties'
 
@@ -53,6 +55,8 @@ export default function PlayersTable({ rows, meId, drivers, penalties, raceId })
           const pl = it.player
           const isMe = pl.id === meId
           const isOpen = open === pl.id && !pl.none
+          // Prono saisi ou corrigé par un admin (et pas modifié depuis par le joueur) : mention « Admin » sous le nom.
+          const adminEntry = pl.none ? null : adminEntryOf(pl.pred)
           return (
             <div
               key={pl.id}
@@ -68,7 +72,11 @@ export default function PlayersTable({ rows, meId, drivers, penalties, raceId })
                   <span className="text-xl leading-none">{pl.avatar}</span>
                   <span className="min-w-0 leading-tight">
                     <span className={`block font-bold text-sm truncate ${isMe ? 'text-white' : 'text-white/80'}`}>{pl.name}</span>
-                    {isMe && <span className="block text-[11px] text-muted">vous</span>}
+                    {(isMe || adminEntry) && (
+                      <span className="block text-[11px] text-muted">
+                        {isMe && 'vous'}{adminEntry && <AdminMention isMe={isMe} />}
+                      </span>
+                    )}
                   </span>
                 </span>
                 {pl.none
@@ -95,6 +103,7 @@ export default function PlayersTable({ rows, meId, drivers, penalties, raceId })
                     ))}
                     <span />
                   </div>
+                  <AdminNote entry={adminEntry} />
                   <PredictionTimestamps prediction={pl.pred} penalties={penalties} playerId={pl.id} raceId={raceId} />
                   {penaltyLines(summarizePenalties(penalties, pl.id, raceId)).map(line => (
                     <p key={line} className="flex items-center gap-1.5 text-xs font-bold text-accent"><AlertTriangle size={12} className="shrink-0" />{line}</p>

@@ -14,6 +14,8 @@ import Countdown from '../components/Countdown'
 import HeaderBadges from '../components/HeaderBadges'
 import PredictionSheet from '../components/PredictionSheet'
 import SendChip from '../components/SendStatus'
+import AdminNote, { AdminMention } from '../components/AdminEntry'
+import { adminEntryOf } from '../utils/adminInterventions'
 import { usePendingEntry, useSendLevel, useOpenRequest } from '../hooks/usePendingPredictions'
 import { clearOpenRequest } from '../utils/pendingPredictions'
 import PredictionTimestamps from '../components/PredictionTimestamps'
@@ -332,6 +334,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
   // Détail d'un pronostic (heures, modifications, premier podium, pénalités).
   const renderPredictionDetail = (player, d, { showFullNames = false } = {}) => (
     <div className="space-y-1.5">
+      <AdminNote entry={adminEntryOf(d.pred)} />
       <PredictionTimestamps prediction={d.pred} penalties={penalties} playerId={player.id} raceId={nextRace.id} modifiedTone={d.penalizedMod ? PEN_TONE : FREE_TONE} />
       {d.modCount > 0 && (
         <p className="text-xs text-muted pl-[16px]">
@@ -384,6 +387,7 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             <span className="block font-bold text-sm truncate" style={{ color }}>{displayName}</span>
             <span className="block text-[11px] text-muted">
               vous
+              {adminEntryOf(d.pred) && <AdminMention isMe />}
               {sending && sendLevel !== 'stuck' && <span className="text-white/80"> · envoi en cours</span>}
               {sending && sendLevel === 'stuck' && <span className="text-accent font-bold"> · pas encore enregistré</span>}
             </span>
@@ -465,7 +469,10 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
         >
           <span className="flex items-center gap-1.5 min-w-0">
             <span className="text-xl leading-none">{avatar}</span>
-            <span className="font-bold text-sm truncate text-white/80">{displayName}</span>
+            <span className="min-w-0 leading-tight">
+              <span className="block font-bold text-sm truncate text-white/80">{displayName}</span>
+              {adminEntryOf(d.pred) && <span className="block text-[11px] text-muted"><AdminMention /></span>}
+            </span>
           </span>
           {POSITIONS.map((pos, i) => (
             <div

@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { db } from '../firebase'
 import { useCollection, useDocument, where, upsertDoc, deleteDocument } from '../hooks/useFirestore'
 import DeleteLeagueSheet from '../components/DeleteLeagueSheet'
+import { saveAdminIntervention } from '../utils/adminInterventions'
 import Skeleton from '../components/Skeleton'
 import ReglagesHub from '../components/reglages/ReglagesHub'
 import ReglagesJoueurs from '../components/reglages/ReglagesJoueurs'
@@ -77,6 +78,21 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
     } catch {
       return { ok: false, error: "Erreur lors de l'ajout de la pénalité. Réessaie." }
     }
+  }
+
+  // ── Saisie ou correction du pronostic d'un joueur par un admin (voir utils/adminInterventions.js) ──
+  // Écrit le prono, l'entrée du journal de la ligue et la pénalité choisie en un seul lot. Les règles Firestore
+  // refusent toute écriture d'admin sur le prono d'un autre joueur sans l'entrée de journal.
+  const saveProno = async (params) => {
+    if (!isLeagueAdmin) return { ok: false, error: 'Réservé aux administrateurs de la ligue.' }
+    const adminProfile = profiles.find(p => p._id === user?.uid)
+    const res = await saveAdminIntervention({
+      ...params,
+      leagueId,
+      admin: { uid: user.uid, name: String(adminProfile?.displayName ?? 'Admin') },
+    })
+    if (res.ok) addToast?.('Intervention publiée à la ligue', 'success')
+    return res
   }
 
   const removePenalty = async (pen) => {
@@ -255,6 +271,9 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
           canManage={isLeagueAdmin}
           onAddPenalty={addPenalty}
           onRemovePenalty={removePenalty}
+          onSaveProno={saveProno}
+          adminName={String(profiles.find(p => p._id === user?.uid)?.displayName ?? 'Admin')}
+          allRaces={sortedRaces}
         />
       )}
 

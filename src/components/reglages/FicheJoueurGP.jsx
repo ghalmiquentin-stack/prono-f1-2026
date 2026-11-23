@@ -4,6 +4,8 @@ import { driverCode } from '../../utils/sheetStats'
 import { getPenaltyAmount, summarizePenalties } from '../../utils/penalties'
 import { getModificationCount } from '../../utils/predictions'
 import { formatPredTime, formatModifiedLine, formatHourMinute, toValidDate } from '../PredictionTimestamps'
+import AdminNote from '../AdminEntry'
+import { adminEntryOf } from '../../utils/adminInterventions'
 
 const FREE = '#38BDF8' // modification gratuite (comme l'Accueil)
 const PEN = '#E8002D'  // pénalisée (comme l'Accueil)
@@ -102,6 +104,8 @@ function Pronostic({ pred, d, drivers, hidden }) {
           )}
         </>
       )}
+
+      <AdminNote entry={adminEntryOf(pred)} />
 
       {d.submitted && (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">

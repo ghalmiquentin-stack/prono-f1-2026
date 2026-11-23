@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Timer, RefreshCw, Search, X } from 'lucide-react'
+import { ChevronLeft, Timer, RefreshCw, Search, X, Plus } from 'lucide-react'
 import BottomSheet from '../BottomSheet'
 import StatusDot from '../ligues/StatusDot'
 import FicheJoueurGP, { describeProno, formatPenaltyWhen } from './FicheJoueurGP'
 import { AddPenaltyZone, ConfirmPenalty, ruleAmount } from './PenaltyActions'
+import AdminPronoForm from './AdminPronoForm'
 import { getProfile } from '../../utils/profiles'
 import { summarizePenalties, getPenaltyAmount } from '../../utils/penalties'
 import { hasRaceStarted } from '../../utils/races'
@@ -91,6 +92,29 @@ function SearchField({ value, onChange }) {
   )
 }
 
+// Zone « Intervenir sur le prono » de la fiche : saisir le prono d'un joueur qui n'en a pas, ou corriger le sien.
+// Toute intervention est publiée dans la ligue (badge « Admin » sur le prono, journal). Impossible tant que les
+// pronos sont masqués (le podium s'afficherait dans le journal) et pour un GP annulé.
+function InterventionZone({ pred, hidden, cancelled, onOpen }) {
+  const blocked = hidden ? "Impossible tant que les pronos sont masqués : le podium serait visible dans le journal. Reviens après le départ."
+    : cancelled ? 'GP annulé.' : null
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-black uppercase tracking-widest text-white">Intervenir sur le prono</p>
+      <button
+        onClick={onOpen}
+        disabled={!!blocked}
+        className={`w-full rounded-lg border border-border bg-surfaceHigh text-sm font-bold flex items-center justify-center gap-2 ${blocked ? 'text-muted opacity-50' : 'active:opacity-70'}`}
+        style={{ minHeight: 44 }}
+      >
+        {pred ? <RefreshCw size={15} /> : <Plus size={15} strokeWidth={3} />}
+        {pred ? 'Corriger son prono' : 'Saisir son prono'}
+      </button>
+      <p className="text-[11px] text-muted leading-snug">{blocked ?? 'Toute intervention est publiée dans la ligue : qui, quand, pourquoi, et ce qui change.'}</p>
+    </div>
+  )
+}
+
 function Row({ p, sub, pens, dot, onOpen }) {
   return (
     <button onClick={() => onOpen(p)} style={{ minHeight: 60 }} className="w-full flex items-center gap-3 px-4 py-2 text-left active:bg-surfaceHigh/50">
@@ -118,12 +142,14 @@ function Row({ p, sub, pens, dot, onOpen }) {
 export default function ReglagesSuivi({
   league, players, predictions, penalties, profiles, races, drivers,
   initialRaceId, initialFilter = 'all', onBack, canManage = false, onAddPenalty, onRemovePenalty,
+  onSaveProno, adminName = 'Admin', allRaces,
 }) {
   const [raceId, setRaceId] = useState(initialRaceId)
   const [filter, setFilter] = useState(initialFilter)
   const [query, setQuery] = useState('')
   const [openPlayerId, setOpenPlayerId] = useState(null)
   const [confirm, setConfirm] = useState(null) // { kind: 'add', type } | { kind: 'remove', pen }
+  const [intervene, setIntervene] = useState(false) // formulaire de saisie / correction du prono
 
   const race = races.find(r => r.id === raceId) ?? races[0] ?? null
 
@@ -226,7 +252,7 @@ export default function ReglagesSuivi({
       </div>
 
       {/* La fiche et la confirmation se relaient : la confirmation remplace la fiche, Annuler la ramène */}
-      <BottomSheet isOpen={!!openPlayer && !confirm} onClose={() => setOpenPlayerId(null)} title="Détail">
+      <BottomSheet isOpen={!!openPlayer && !confirm && !intervene} onClose={() => setOpenPlayerId(null)} title="Détail">
         {openPlayer && (
           <FicheJoueurGP
             player={openPlayer}
@@ -240,9 +266,38 @@ export default function ReglagesSuivi({
             {canManage && (() => {
               const pred = predOf(openPlayer.id)
               const d = pred ? describeProno({ pred, penalties, playerId: openPlayer.id, race }) : null
-              return <AddPenaltyZone pred={pred} d={d} rules={league?.rules} onPick={(type) => setConfirm({ kind: 'add', type })} />
+              return (
+                <>
+                  <InterventionZone pred={pred} hidden={hidden} cancelled={race.status === 'cancelled'} onOpen={() => setIntervene(true)} />
+                  <AddPenaltyZone pred={pred} d={d} rules={league?.rules} onPick={(type) => setConfirm({ kind: 'add', type })} />
+                </>
+              )
             })()}
           </FicheJoueurGP>
+        )}
+      </BottomSheet>
+
+      <BottomSheet isOpen={!!openPlayer && intervene} onClose={() => setIntervene(false)} title={predOf(openPlayerId) ? 'Corriger le prono' : 'Saisir le prono'} fullHeight>
+        {openPlayer && intervene && (
+          <AdminPronoForm
+            key={`${openPlayer.id}-${race.id}`}
+            player={openPlayer}
+            race={race}
+            pred={predOf(openPlayer.id)}
+            league={league}
+            players={players.filter(p => p.active !== false)}
+            predictions={predictions}
+            penalties={penalties}
+            races={allRaces ?? races}
+            drivers={drivers}
+            adminName={adminName}
+            onCancel={() => setIntervene(false)}
+            onSave={async (params) => {
+              const res = await onSaveProno(params)
+              if (res?.ok) setIntervene(false)
+              return res
+            }}
+          />
         )}
       </BottomSheet>
 
