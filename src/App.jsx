@@ -21,6 +21,7 @@ import RejoindreLigue from './screens/RejoindreLigue'
 import ReglagesLigue from './screens/ReglagesLigue'
 import ReglagesSuperAdmin from './screens/ReglagesSuperAdmin'
 import ReglesDuJeu from './screens/ReglesDuJeu'
+import JournalAdmin from './screens/JournalAdmin'
 import Intro from './screens/Intro'
 import PremiereLigue from './screens/PremiereLigue'
 
@@ -353,6 +354,10 @@ export default function App() {
             addToast={addToast}
           />
         )
+      case 'journal-admin':
+        return hasAnyLeague
+          ? <JournalAdmin key={effectiveActiveLeagueId} activeLeagueId={effectiveActiveLeagueId} onBack={() => setActiveTab('classement')} />
+          : leaguesScreen
       case 'reglages-du-jeu':
         return <ReglesDuJeu leagues={leagueOptions} activeLeagueId={effectiveActiveLeagueId} onBack={() => setActiveTab(tabBeforeReglesRef.current)} />
       case 'admin':

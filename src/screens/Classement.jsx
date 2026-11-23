@@ -5,6 +5,10 @@ import { getProfile } from '../utils/profiles'
 import { computeStandings } from '../utils/standings'
 import { formatLongDate } from '../utils/sheetStats'
 import HeaderBadges from '../components/HeaderBadges'
+import EntryRow from '../components/EntryRow'
+import { ScrollText } from 'lucide-react'
+import { journalTitle, sortJournal } from '../utils/adminJournal'
+import { formatAdminWhen } from '../components/AdminEntry'
 import PredictionSheet from '../components/PredictionSheet'
 import MyPositionCard from '../components/classement/MyPositionCard'
 import StandingsList from '../components/classement/StandingsList'
@@ -43,6 +47,8 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
   const { data: predictions, error: predictionsError } = useCollection(user ? 'predictions' : null, leagueConstraint)
   const { data: penalties, error: penaltiesError } = useCollection(user ? 'penalties' : null, leagueConstraint)
   const { data: drivers } = useCollection(user ? 'drivers' : null)
+  // Journal des interventions des admins : sert seulement au lien du pied de page (nombre et dernière entrée).
+  const { data: adminLog } = useCollection(user ? 'adminLog' : null, leagueConstraint)
 
   const [selectedPlayer, setSelectedPlayer] = useState(null)
   const [selectedRace, setSelectedRace] = useState(null)
@@ -156,6 +162,17 @@ export default function Classement({ currentPlayerId, activeLeagueName, activeLe
               Voir les règles →
             </button>
           </p>
+          {(() => {
+            const last = sortJournal(adminLog)[0]
+            const sub = last
+              ? `${adminLog.length} intervention${adminLog.length > 1 ? 's' : ''} · dernière : ${journalTitle(last)}${formatAdminWhen(last.at) ? `, ${formatAdminWhen(last.at)}` : ''}`
+              : 'Aucune cette saison'
+            return (
+              <div className="card overflow-hidden">
+                <EntryRow icon={<ScrollText size={18} />} title="Interventions des admins" sub={sub} onClick={() => setActiveTab?.('journal-admin')} />
+              </div>
+            )
+          })()}
         </div>
       )}
 
