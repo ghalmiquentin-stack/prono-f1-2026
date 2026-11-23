@@ -140,7 +140,7 @@ export default function ReglagesHub({
         <button onClick={onBack} className="flex items-center gap-1 text-sm font-bold text-muted -ml-1 pr-3 active:opacity-70" style={{ minHeight: 44 }}>
           <ChevronLeft size={18} />Mes ligues
         </button>
-        <h1 className="text-2xl font-black tracking-tight leading-tight">Réglages</h1>
+        <h1 className="text-2xl font-black tracking-tight leading-tight">Gérer la ligue</h1>
         <p className="text-sm text-muted mt-0.5 break-words">{league?.name ?? 'Ligue'}</p>
       </div>
 

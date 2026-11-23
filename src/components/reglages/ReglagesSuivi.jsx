@@ -172,7 +172,7 @@ export default function ReglagesSuivi({
     return (
       <div className="pb-6">
         <div className="px-5 pt-4 pb-3">
-          <button onClick={onBack} className="flex items-center gap-1 text-sm font-bold text-muted -ml-1 pr-3 active:opacity-70" style={{ minHeight: 44 }}><ChevronLeft size={18} />Réglages</button>
+          <button onClick={onBack} className="flex items-center gap-1 text-sm font-bold text-muted -ml-1 pr-3 active:opacity-70" style={{ minHeight: 44 }}><ChevronLeft size={18} />Gérer la ligue</button>
           <h1 className="text-2xl font-black tracking-tight leading-tight">Suivi des GP</h1>
         </div>
         <p className="px-5 text-sm text-muted">Aucun GP pour le moment.</p>
@@ -221,7 +221,7 @@ export default function ReglagesSuivi({
     <div className="pb-6">
       <div className="px-5 pt-4 pb-3">
         <button onClick={onBack} className="flex items-center gap-1 text-sm font-bold text-muted -ml-1 pr-3 active:opacity-70" style={{ minHeight: 44 }}>
-          <ChevronLeft size={18} />Réglages
+          <ChevronLeft size={18} />Gérer la ligue
         </button>
         <h1 className="text-2xl font-black tracking-tight leading-tight">Suivi des GP</h1>
       </div>
