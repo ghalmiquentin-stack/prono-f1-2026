@@ -40,6 +40,25 @@ service cloud.firestore {
         : !raceIsLocked(raceId);
     }
 
+    // ── Interventions d'un admin sur un pronostic (transparence envers la ligue) ──
+    // Un admin (de la ligue, ou super-admin) n'écrit un pronostic qu'en même temps qu'une entrée de journal
+    // `adminLog` (même lot d'écritures). Le pronostic porte `adminEntry` : { logId, at, ... } ; la règle
+    // vérifie que le journal existe APRÈS le lot (et y est écrit : at == request.time), qu'il vise ce pronostic,
+    // qu'il est écrit par cet admin dans cette ligue, et que `adminEntry.at` est l'heure du serveur de cette écriture (les fonctions
+    // serveur reconnaissent ainsi une écriture d'admin : adminEntry.at == updatedAt).
+    function adminWriteLogged(predId, data) {
+      return data.adminEntry is map
+        && data.adminEntry.logId is string
+        && data.adminEntry.at == request.time
+        && data.updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/adminLog/$(data.adminEntry.logId))
+        && getAfter(/databases/$(database)/documents/adminLog/$(data.adminEntry.logId)).data.predictionId == predId
+        && getAfter(/databases/$(database)/documents/adminLog/$(data.adminEntry.logId)).data.byUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/adminLog/$(data.adminEntry.logId)).data.leagueId == data.leagueId
+        // Le journal doit être écrit dans CE lot : un ancien journal ne peut pas servir de caution à une nouvelle intervention.
+        && getAfter(/databases/$(database)/documents/adminLog/$(data.adminEntry.logId)).data.at == request.time;
+    }
+
     // ── leagues ──────────────────────────────────────────────────────────
     match /leagues/{leagueId} {
       allow read: if isSignedIn();
@@ -122,8 +141,10 @@ service cloud.firestore {
       // create uses request.resource (the document doesn't exist yet, so
       // resource.data would be undefined); update/delete use resource (the
       // existing document), since request.resource is undefined on delete.
-      allow create: if isSuperAdmin()
-        || isLeagueAdmin(request.resource.data.leagueId)
+      // Un admin passe par la branche « admin » (journal obligatoire, voir adminWriteLogged) ; un joueur
+      // (admin ou non) écrit son propre pronostic tant que le GP n'a pas démarré, sans journal.
+      allow create: if ((isSuperAdmin() || isLeagueAdmin(request.resource.data.leagueId))
+          && adminWriteLogged(predId, request.resource.data))
         || (
           get(/databases/$(database)/documents/players/$(request.resource.data.playerId)).data.authUid == request.auth.uid
           && !raceIsLocked(request.resource.data.raceId)
@@ -137,8 +158,8 @@ service cloud.firestore {
       // ReglagesLigue.jsx's toggleManualUnlock). Without this, a player
       // could grant themselves the "race started" edit-lock exception
       // directly via the API, bypassing the admin-only intent.
-      allow update: if isSuperAdmin()
-        || isLeagueAdmin(resource.data.leagueId)
+      allow update: if ((isSuperAdmin() || isLeagueAdmin(resource.data.leagueId))
+          && adminWriteLogged(predId, request.resource.data))
         || (
           get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.authUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -147,9 +168,10 @@ service cloud.firestore {
           && (!raceIsLocked(resource.data.raceId) || resource.data.manualUnlockOverride == true)
         );
 
-      allow delete: if isSuperAdmin()
-        || isLeagueAdmin(resource.data.leagueId)
-        || (
+      // Seul le joueur supprime son propre pronostic (et seulement avant les qualifs). Un admin ne supprime
+      // JAMAIS le pronostic d'un autre : il le corrige, avec journal et motif (voir adminWriteLogged), pour
+      // qu'aucune intervention ne puisse se faire en silence. Ménage technique : script serveur (SDK admin).
+      allow delete: if (
           get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.authUid == request.auth.uid
           && playerMayDeleteOwnPrediction(resource.data.raceId)
         );
@@ -166,6 +188,28 @@ service cloud.firestore {
         || isLeagueAdmin(request.resource.data.leagueId);
 
       allow update, delete: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
+    }
+
+    // ── adminLog : journal des interventions des admins (ajout seul) ───────────────
+    // Lecture pour tout compte connecté (comme le reste des données de ligue). Création réservée à un admin
+    // de la ligue concernée (ou au super-admin), au nom de son propre compte, à l'heure du serveur, avec un
+    // motif lisible. Aucune modification ni suppression, pour personne : l'historique ne se réécrit pas.
+    match /adminLog/{logId} {
+      allow read: if isSignedIn();
+
+      allow create: if (isSuperAdmin() || isLeagueAdmin(request.resource.data.leagueId))
+        && request.resource.data.byUid == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.kind in ['prediction-create', 'prediction-edit']
+        && request.resource.data.motif is string
+        && request.resource.data.motif.trim().size() >= 5
+        && request.resource.data.motif.size() <= 200
+        && request.resource.data.predictionId is string
+        && request.resource.data.playerId is string
+        && request.resource.data.raceId is number
+        && request.resource.data.after is map;
+
+      allow update, delete: if false;
     }
 
     // ── races, drivers, races_history, config ───────────────────────────────

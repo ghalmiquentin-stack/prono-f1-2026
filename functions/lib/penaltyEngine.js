@@ -47,7 +47,7 @@
  * TRANSITOIRES (lecture/écriture Firestore) : logger.error puis relancées.
  */
 
-const { decide, deepEqual, PermanentError } = require('./predictionShadow')
+const { decide, isAdminWrite, deepEqual, PermanentError } = require('./predictionShadow')
 
 const JOURNAL_COLLECTION = 'penaltyJournal'
 const PENALTIES_COLLECTION = 'penalties'
@@ -148,7 +148,10 @@ async function handleActiveWrite(deps, event) {
       && (eventType === 'create' || (eventType === 'update' && podiumChanged))
     const league = needsLeague && leagueId ? await readLeague(leagueId) : null
 
-    let { decision, penalty } = decide({ eventType, podiumChanged, eventMs, race, league })
+    // Écriture d'un admin (saisie ou correction avec journal d'intervention) : aucune pénalité automatique.
+    let { decision, penalty } = isAdminWrite(after)
+      ? { decision: 'admin-entry', penalty: null }
+      : decide({ eventType, podiumChanged, eventMs, race, league })
 
     // Un rattrapage a-t-il déjà tenu compte de cette écriture ? (événement
     // rejoué tardivement par le retry, après un passage du rattrapage.)
@@ -252,7 +255,10 @@ async function catchUpOne(deps, nowMs, { id: predictionId, data }) {
   const qMs = toMillis(race?.qualifyingStartAt)
   const needsLeague = !Number.isNaN(qMs) && updatedAtMs >= qMs && podiumChanged
   const league = needsLeague && leagueId ? await readLeague(leagueId) : null
-  const { decision, penalty } = decide({ eventType: 'update', podiumChanged, eventMs: updatedAtMs, race, league })
+  // Écriture d'un admin dont l'événement a été manqué : même règle, aucune pénalité automatique.
+  const { decision, penalty } = isAdminWrite(data)
+    ? { decision: 'admin-entry', penalty: null }
+    : decide({ eventType: 'update', podiumChanged, eventMs: updatedAtMs, race, league })
 
   const penaltyId = penalty ? penaltyIdFor(penalty.type, predictionId, key) : null
   const penaltyDoc = penalty

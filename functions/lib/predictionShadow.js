@@ -82,6 +82,17 @@ function toMillis(v) {
   return NaN
 }
 
+// Cette écriture vient-elle d'un admin (saisie ou correction d'un pronostic avec son journal d'intervention) ?
+// Les règles Firestore garantissent qu'une écriture d'admin pose adminEntry.at == updatedAt == heure du serveur
+// (adminWriteLogged dans firestore.rules). Une écriture ultérieure du joueur change updatedAt mais pas
+// adminEntry.at : elle n'est donc plus considérée comme une écriture d'admin. Dans ce cas, aucune pénalité
+// automatique : l'admin a choisi, avec motif, dans l'application (pénalité manuelle posée dans le même lot).
+function isAdminWrite(doc) {
+  const at = toMillis(doc?.adminEntry?.at)
+  const updated = toMillis(doc?.updatedAt)
+  return !Number.isNaN(at) && !Number.isNaN(updated) && at === updated
+}
+
 /**
  * Cœur de la décision, pur : ne fait aucune entrée/sortie.
  *
@@ -161,7 +172,9 @@ async function handlePredictionWrite(deps, event) {
     })()
     const league = needsLeague && leagueId ? await readLeague(leagueId) : null
 
-    const { decision, penalty } = decide({ eventType, podiumChanged, eventMs, race, league })
+    const { decision, penalty } = isAdminWrite(after)
+      ? { decision: 'admin-entry', penalty: null }
+      : decide({ eventType, podiumChanged, eventMs, race, league })
 
     const docId = `${predictionId}_${eventId}`
     const eventTime = toTimestamp(new Date(eventMs))
@@ -260,6 +273,7 @@ module.exports = {
   observePredictionWrite,
   handlePredictionWrite,
   decide,
+  isAdminWrite,
   deepEqual,
   PermanentError,
   createOnce,
