@@ -201,7 +201,7 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   const [openId, setOpenId] = useState(null) // league._id de la ligue ouverte (une seule à la fois)
   const [addOpen, setAddOpen] = useState(false)
   const [query, setQuery] = useState('')
-  // Règles et options de la ligue active : null = pas encore touché (défaut : ouvert s'il n'y a qu'une ligue).
+  // Règles de la ligue active (barre « Règles de la ligue ») : null = pas encore touché (défaut : ouvert s'il n'y a qu'une ligue).
   const [activeOptionsOverride, setActiveOptionsOverride] = useState(null)
 
   // La ligue ouverte se détache de la liste dans sa propre carte : React recrée donc son

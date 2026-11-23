@@ -5,7 +5,7 @@ import ManageLeagueButton from './ManageLeagueButton'
 // Carte de la ligue active : une carte neutre comme les autres (le cadre vert était trop criard,
 // retouche du 23 nov. 2026) ; seule la pastille « Active » reste verte. Le bouton « Gérer la ligue »
 // (admin seulement) est dans l'en-tête, visible sans rien déplier. Le corps est le même que celui
-// d'une ligue ouverte dans la liste (LeagueCardBody) ; le texte de la barre « Règles et options »
+// d'une ligue ouverte dans la liste (LeagueCardBody) ; le texte de la barre « Règles de la ligue »
 // dit ce qu'elle cache (une flèche seule en haut de carte faisait croire que la carte était
 // déjà ouverte).
 export default function ActiveLeagueCard({ entry, nextRace, open, onToggle, onSettings, onLeave }) {
