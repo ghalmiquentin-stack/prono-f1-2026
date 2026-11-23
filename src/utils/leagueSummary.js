@@ -27,9 +27,13 @@ export function gapLabel(gap) {
 //   null     pas de GP à venir (inter-saison) : rien à montrer ;
 //   'done'   pronostic soumis ;
 //   'closed' pas de prono et la course a démarré ;
-//   'missing' pas encore de prono, la course n'a pas démarré.
-export function pronoState({ nextRace, started, hasPrediction }) {
+//   'missing' pas encore de prono, la course n'a pas démarré ;
+//   'sending' envoi en cours (le serveur n'a pas encore confirmé) ;
+//   'stuck'   envoi qui traîne depuis plus de 15 s (« pas encore reçu »).
+// `send` : null, 'sending' ou 'stuck' (registre des envois, utils/pendingPredictions.js).
+export function pronoState({ nextRace, started, hasPrediction, send = null }) {
   if (!nextRace) return null
+  if (send) return send
   if (hasPrediction) return 'done'
   return started ? 'closed' : 'missing'
 }
@@ -38,6 +42,8 @@ export const PRONO_TEXT = {
   done: 'Pronostic soumis',
   missing: 'Pas encore de prono',
   closed: 'Pas de prono',
+  sending: 'Envoi en cours',
+  stuck: 'Pas encore reçu',
 }
 
 // Règles d'une ligue, en trois lignes pour la fiche de Mes ligues (lecture seule).

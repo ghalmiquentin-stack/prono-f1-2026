@@ -3,6 +3,8 @@ import { Trophy, Plus, ShieldCheck, User, Search, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useCollection, where } from '../hooks/useFirestore'
 import { useRaceTiming } from '../hooks/useRaceTiming'
+import { usePendingEntries, usePendingClock } from '../hooks/usePendingPredictions'
+import { levelOf, sendKey } from '../utils/pendingPredictions'
 import { computeStandings, normalizeText } from '../utils/standings'
 import { gapFromStandings, pronoState } from '../utils/leagueSummary'
 import { getProfile } from '../utils/profiles'
@@ -119,6 +121,11 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   const nextRace = useMemo(() => sortedRaces.find(r => r.status === 'upcoming') ?? null, [sortedRaces])
   const { started: nextRaceStarted } = useRaceTiming(nextRace)
 
+  // Envois de pronostics pas encore confirmés par le serveur (une ligue peut en avoir un en attente
+  // pendant qu'on regarde une autre) : le point d'état de la ligue le dit.
+  const sendEntries = usePendingEntries()
+  const sendingNow = usePendingClock(sendEntries.some(e => e.status === 'pending'))
+
   const baseEntries = useMemo(() => {
     // active !== false so pre-existing docs without the field default to
     // active — only an explicit active: false (left league) is excluded.
@@ -171,9 +178,15 @@ export default function MesLigues({ setActiveTab, onOpenLeagueSettings, activeLe
   const myLeagues = useMemo(
     () => baseEntries.map(entry => ({
       ...entry,
-      prono: pronoState({ nextRace, started: nextRaceStarted, hasPrediction: entry.hasPrediction }),
+      prono: pronoState({
+        nextRace, started: nextRaceStarted, hasPrediction: entry.hasPrediction,
+        send: (() => {
+          const e = nextRace && sendEntries.find(x => x.key === sendKey(entry.league._id, nextRace.id) && x.status === 'pending')
+          return e ? (levelOf(sendingNow - e.startedAt) === 'stuck' ? 'stuck' : 'sending') : null
+        })(),
+      }),
     })),
-    [baseEntries, nextRace, nextRaceStarted]
+    [baseEntries, nextRace, nextRaceStarted, sendEntries, sendingNow]
   )
 
   const activeEntry = myLeagues.find(({ league }) => league._id === activeLeagueId) ?? null

@@ -10,6 +10,8 @@ import { circuitLabel, countdownParts, formatLongDate } from '../utils/sheetStat
 import { getPenaltyAmount } from '../utils/penalties'
 import { getDriverPhoto } from '../utils/drivers'
 import PredictionSheet from '../components/PredictionSheet'
+import SendChip from '../components/SendStatus'
+import { usePendingEntry, useSendLevel } from '../hooks/usePendingPredictions'
 import Skeleton from '../components/Skeleton'
 import HeaderBadges from '../components/HeaderBadges'
 import CircuitTrack from '../components/CircuitTrack'
@@ -55,6 +57,17 @@ function NoPronoMark({ race }) {
   return started
     ? <span className="text-muted font-bold text-xs">Verrouillé</span>
     : <span className="text-accent font-bold text-xs animate-pulse">+ Prono</span>
+}
+
+// Marque d'une course à venir : « Soumis » seulement quand le serveur a confirmé le pronostic. Tant que
+// l'envoi est en cours (registre des envois), la puce dit « Envoi en cours » puis « Pas encore reçu ».
+function SubmittedMark({ race, myPred, leagueId }) {
+  const entry = usePendingEntry(leagueId, race.id)
+  const level = useSendLevel(entry)
+  if (entry) return <SendChip level={level} />
+  return myPred
+    ? <span className="text-green-400 font-bold text-xs">✓ Soumis</span>
+    : <NoPronoMark race={race} />
 }
 
 // Corps de la grande carte « Prochain GP » : le départ (date, heure, compte à
@@ -279,9 +292,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                   <div className="card overflow-hidden">
                     <div className="flex items-center justify-between bg-surfaceHigh px-4 min-h-[40px]">
                       <span className="text-[11px] font-bold tracking-widest uppercase">Prochain GP</span>
-                      {myPred
-                        ? <span className="text-green-400 font-bold text-xs">✓ Soumis</span>
-                        : <NoPronoMark race={race} />}
+                      <SubmittedMark race={race} myPred={myPred} leagueId={activeLeagueId} />
                     </div>
                     <button
                       onClick={() => openRaceSheet(race)}
@@ -353,11 +364,7 @@ export default function Courses({ currentPlayerId, addToast, activeLeagueName, a
                           <span className="text-xs text-muted">Pas de prono</span>
                         )
                       ) : (
-                        myPred ? (
-                          <span className="text-green-400 font-bold text-xs">✓ Soumis</span>
-                        ) : (
-                          <NoPronoMark race={race} />
-                        )
+                        <SubmittedMark race={race} myPred={myPred} leagueId={activeLeagueId} />
                       )}
                     </div>
 

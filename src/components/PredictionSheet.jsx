@@ -1,6 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { LockOpen, Lock, Ban, AlertTriangle } from 'lucide-react'
+import { LockOpen, Lock, Ban, AlertTriangle, WifiOff, Loader2 } from 'lucide-react'
+import { auth } from '../firebase'
 import { useDocument, upsertDoc } from '../hooks/useFirestore'
+import { usePendingEntries, usePendingEntry, useSendLevel, useOnline } from '../hooks/usePendingPredictions'
+import { startSend, markDelivered, markRejected, sendKey, getEntries } from '../utils/pendingPredictions'
 import { calculateRaceScore, detailPoints } from '../utils/scoring'
 import { getPlayerIdentity } from '../utils/profiles'
 import { getModificationCount } from '../utils/predictions'
@@ -12,7 +15,7 @@ import { getPenaltyAmount } from '../utils/penalties'
 import {
   getPenaltyRule, getPenaltyContext, buildPenaltyConfirm,
 } from '../utils/qualifyingPenalty'
-import { withRoundNumbers } from '../utils/races'
+import { withRoundNumbers, raceStartInstant } from '../utils/races'
 import { rankOf } from '../utils/sheetStats'
 import BottomSheet from './BottomSheet'
 import ConfirmModal from './ConfirmModal'
@@ -37,7 +40,16 @@ export default function PredictionSheet({
   const [draftPrediction, setDraftPrediction] = useState({ P1: null, P2: null, P3: null })
   const [activePosition, setActivePosition] = useState(null)
   const [driverPickerOpen, setDriverPickerOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
+
+  // Envoi en cours pour ce GP dans cette ligue (registre des envois, voir utils/pendingPredictions.js) :
+  // la feuille peut être fermée pendant l'attente, l'état vit en dehors d'elle.
+  const pendingEntry = usePendingEntry(activeLeagueId, race?.id)
+  const sendLevel = useSendLevel(pendingEntry)
+  const allEntries = usePendingEntries()
+  const online = useOnline()
+  // GP dont la feuille est ouverte : sert à ne fermer la feuille qu'à la confirmation de CE GP, et
+  // seulement si elle est encore ouverte dessus.
+  const openRaceIdRef = useRef(null)
 
   // League rules — read here (not passed down) so the modal stays correct
   // regardless of which screen opens it.
@@ -79,6 +91,7 @@ export default function PredictionSheet({
   const { started: raceStarted } = useRaceTiming(currentRace)
   const myPred = currentRace ? getMyPrediction(currentRace.id) : null
   const locked = raceStarted && myPred?.manualUnlockOverride !== true
+  openRaceIdRef.current = isOpen ? (race?.id ?? null) : null
 
   // The driver picker may be open when the start is crossed: close it.
   useEffect(() => {
@@ -99,7 +112,9 @@ export default function PredictionSheet({
   useEffect(() => {
     if (isOpen && !prevOpenRef.current && race) {
       const existing = getMyPrediction(race.id)
-      setDraftPrediction(existing?.prediction ?? { P1: null, P2: null, P3: null })
+      // Un prono refusé ou perdu (envoi jamais reçu) revient dans la feuille : il suffit de revalider.
+      const missed = allEntries.find(e => e.key === sendKey(activeLeagueId, race.id) && (e.status === 'lost' || e.status === 'rejected'))
+      setDraftPrediction(missed?.prediction ?? existing?.prediction ?? { P1: null, P2: null, P3: null })
     }
     prevOpenRef.current = isOpen
   }, [isOpen, race])
@@ -153,24 +168,41 @@ export default function PredictionSheet({
   const canSave = draftPrediction.P1 && draftPrediction.P2 && draftPrediction.P3
 
   const savePrediction = async () => {
-    if (!canSave || !race || saving) return
-    setSaving(true)
+    // Un envoi de ce GP est déjà en cours : on n'en lance pas un second (le registre est lu en direct, pas
+    // depuis le rendu, pour qu'un double appui rapide ne parte pas deux fois).
+    if (!canSave || !race) return
+    const inFlight = getEntries().some(e => e.key === sendKey(activeLeagueId, race.id) && e.status === 'pending')
+    if (inFlight) return
+    const existing = getMyPrediction(race.id)
+
+    // No-op save: final podium is identical to what was already stored —
+    // don't write anything (no prediction doc churn, no penalty), and
+    // leave the sheet open since nothing actually changed.
+    if (existing && POSITIONS.every(pos => draftPrediction[pos] === existing.prediction?.[pos])) {
+      addToast('Aucune modification effectuée', 'info')
+      return
+    }
+
+    // Le registre garde la trace de l'envoi jusqu'à la confirmation du serveur : sans lui, la liste locale
+    // montre déjà le prono (« soumis ») alors que le serveur peut ne jamais le recevoir.
+    const startedAt = Date.now()
+    const raceId = race.id
+    const key = startSend({
+      uid: auth.currentUser?.uid ?? null,
+      leagueId: activeLeagueId,
+      playerId: currentPlayerId,
+      raceId,
+      raceStartMs: raceStartInstant(race).getTime(),
+      prediction: { P1: draftPrediction.P1, P2: draftPrediction.P2, P3: draftPrediction.P3 },
+      isModification: !!existing,
+      startedAt,
+    })
     try {
-      const existing = getMyPrediction(race.id)
-
-      // No-op save: final podium is identical to what was already stored —
-      // don't write anything (no prediction doc churn, no penalty), and
-      // leave the sheet open since nothing actually changed.
-      if (existing && POSITIONS.every(pos => draftPrediction[pos] === existing.prediction?.[pos])) {
-        addToast('Aucune modification effectuée', 'info')
-        return
-      }
-
       if (!existing) {
         // First save — store initialPrediction for future modification tracking
-        await upsertDoc('predictions', `${currentPlayerId}_${race.id}`, {
+        await upsertDoc('predictions', `${currentPlayerId}_${raceId}`, {
           playerId: currentPlayerId,
-          raceId: race.id,
+          raceId,
           leagueId: activeLeagueId,
           prediction: draftPrediction,
           initialPrediction: draftPrediction,
@@ -178,6 +210,7 @@ export default function PredictionSheet({
           submittedAt: new Date(),
           manualUnlockOverride: false,
         })
+        markDelivered(key, startedAt)
         addToast('Pronostic enregistré !', 'success')
       } else {
         // Modification — no cap: every save after the first just bumps the
@@ -189,13 +222,14 @@ export default function PredictionSheet({
         // players (their prediction doc simply doesn't have `_id` yet, so
         // introducing it counts as a newly affected key outside hasOnly([...])).
         const { _id, ...existingFields } = existing
-        await upsertDoc('predictions', `${currentPlayerId}_${race.id}`, {
+        await upsertDoc('predictions', `${currentPlayerId}_${raceId}`, {
           ...existingFields,
           leagueId: activeLeagueId,
           prediction: draftPrediction,
           modificationCount: getModificationCount(existing) + 1,
           modifiedAt: new Date(),
         })
+        markDelivered(key, startedAt)
 
         // Penalties are no longer written from the client: the server computes
         // them from its own clock (cloud function, switch at the start of the
@@ -203,12 +237,16 @@ export default function PredictionSheet({
         // penalty here.
         addToast('Pronostic modifié', 'warning')
       }
-      handleClose()
+      // La feuille a pu être fermée (ou changée de GP) pendant l'attente : on ne la ferme que si elle est
+      // encore ouverte sur ce GP.
+      if (openRaceIdRef.current === raceId) handleClose()
     } catch (err) {
-      addToast('Erreur lors de la sauvegarde', 'error')
+      // Le serveur a refusé l'écriture (la copie locale est retirée automatiquement). Un refus de droits
+      // vient en pratique du verrouillage au départ du GP.
+      const started = Date.now() >= raceStartInstant(race).getTime()
+      markRejected(key, startedAt, started ? 'started' : 'refused')
+      addToast(started ? "Prono non enregistré : le Grand Prix a commencé" : 'Erreur lors de la sauvegarde', 'error', 5000)
       console.error(err)
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -311,19 +349,42 @@ export default function PredictionSheet({
           <span className="text-[11px] leading-tight">Le Grand Prix a commencé</span>
         </div>
       ) : (
-        <button
-          onClick={penaltyConfirm.request}
-          disabled={!canSave || saving}
-          className={`w-full py-3 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
-            canSave && !saving ? 'bg-accent text-white shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
-          }`}
-        >
-          {saving
-            ? 'Enregistrement...'
-            : canSave
-              ? (switchRule ? `Valider mon pronostic · -${switchRule.amount} pts` : 'Valider mon pronostic')
-              : 'Complétez le podium'}
-        </button>
+        <>
+          {(sendLevel === 'stuck' || (!pendingEntry && !online)) && (
+            <div className="rounded-xl border border-accent/60 bg-accent/10 px-3 py-2.5 mb-2 text-center" role="status">
+              <p className="text-sm font-black flex items-center justify-center gap-2">
+                <WifiOff size={15} className="text-accent" aria-hidden="true" />
+                {pendingEntry ? 'Pas encore enregistré' : 'Pas de connexion'}
+              </p>
+              <p className="text-[12px] text-white/75 leading-snug mt-0.5">
+                {pendingEntry
+                  ? "Garde l'application ouverte : ton prono partira dès que la connexion revient."
+                  : "Rien n'a été envoyé. Reconnecte-toi, puis valide à nouveau."}
+              </p>
+            </div>
+          )}
+          <button
+            onClick={penaltyConfirm.request}
+            disabled={!canSave || !!pendingEntry || !online}
+            className={`w-full py-3 rounded-xl font-black text-lg tracking-wide transition-all active:scale-95 ${
+              canSave && !pendingEntry && online ? 'bg-accent text-white shadow-glow-red' : 'bg-surfaceHigh text-muted cursor-not-allowed'
+            }`}
+          >
+            {sendLevel === 'stuck'
+              ? 'En attente de connexion'
+              : pendingEntry
+                ? 'Enregistrement...'
+                : canSave
+                  ? (switchRule ? `Valider mon pronostic · -${switchRule.amount} pts` : 'Valider mon pronostic')
+                  : 'Complétez le podium'}
+          </button>
+          {sendLevel === 'slow' && (
+            <p className="mt-2 text-[12px] text-white/75 text-center flex items-center justify-center gap-1.5 leading-snug" role="status">
+              <Loader2 size={13} className="animate-spin shrink-0" aria-hidden="true" />
+              Connexion lente. Reste sur cette page, ton prono n'est pas encore enregistré.
+            </p>
+          )}
+        </>
       )}
     </div>
   ) : null

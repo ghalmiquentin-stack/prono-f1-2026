@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Pencil, ChevronDown, ChevronUp, Star, Timer, AlertTriangle, RefreshCw, Lock } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useRaceTiming } from '../hooks/useRaceTiming'
@@ -13,6 +13,9 @@ import { summarizePenalties, penaltyLines } from '../utils/penalties'
 import Countdown from '../components/Countdown'
 import HeaderBadges from '../components/HeaderBadges'
 import PredictionSheet from '../components/PredictionSheet'
+import SendChip from '../components/SendStatus'
+import { usePendingEntry, useSendLevel, useOpenRequest } from '../hooks/usePendingPredictions'
+import { clearOpenRequest } from '../utils/pendingPredictions'
 import PredictionTimestamps from '../components/PredictionTimestamps'
 import { getQualifyingPodium } from '../utils/qualifyingPodium'
 import CircuitTrack from '../components/CircuitTrack'
@@ -266,6 +269,21 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
     return predictions.find(p => p.playerId === currentPlayerId && p.raceId === nextRace.id)
   }, [nextRace, predictions, currentPlayerId])
 
+  // Envoi du pronostic du prochain GP pas encore confirmé par le serveur (registre des envois) : la copie
+  // locale s'affiche déjà, mais tant que le serveur n'a rien confirmé on ne dit pas « soumis ».
+  const sendEntry = usePendingEntry(activeLeagueId, nextRace?.id)
+  const sendLevel = useSendLevel(sendEntry)
+
+  // « Refaire » du bandeau : ouvre la feuille du prochain GP dans cette ligue.
+  const openRequest = useOpenRequest()
+  useEffect(() => {
+    if (!openRequest || !nextRace) return
+    if (openRequest.leagueId !== activeLeagueId || openRequest.raceId !== nextRace.id) return
+    clearOpenRequest()
+    setSelectedRace(nextRace)
+    setPredictionSheetOpen(true)
+  }, [openRequest, activeLeagueId, nextRace])
+
   // Race start instant (raceTimeUTC from data, 12:00 UTC fallback — see utils/races)
   const raceStartMs = nextRace ? raceStartInstant(nextRace).getTime() : null
 
@@ -356,15 +374,21 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
     )
 
     const tone = d.penalizedMod ? PEN_TONE : FREE_TONE
+    // Envoi pas encore confirmé par le serveur : pointillés et mention sous le nom (la fiche reste lisible).
+    const sending = !!sendEntry
     return (
-      <div key={player.id} className="rounded-xl border border-border bg-surfaceHigh/40 p-3">
+      <div key={player.id} className={`rounded-xl border bg-surfaceHigh/40 p-3 ${sending ? 'border-dashed border-white/30' : 'border-border'}`}>
         <div className="flex items-center gap-2 mb-3">
           <span className="text-xl leading-none">{avatar}</span>
           <span className="flex-1 min-w-0 leading-tight">
             <span className="block font-bold text-sm truncate" style={{ color }}>{displayName}</span>
-            <span className="block text-[11px] text-muted">vous</span>
+            <span className="block text-[11px] text-muted">
+              vous
+              {sending && sendLevel !== 'stuck' && <span className="text-white/80"> · envoi en cours</span>}
+              {sending && sendLevel === 'stuck' && <span className="text-accent font-bold"> · pas encore enregistré</span>}
+            </span>
           </span>
-          {canEdit && (
+          {canEdit && !sending && (
             <button
               onClick={() => openRaceSheet(nextRace)}
               className="w-11 h-11 -my-2 -mr-2 flex items-center justify-center rounded-lg text-muted hover:text-white transition-colors"
@@ -550,10 +574,12 @@ export default function Accueil({ currentPlayerId, setActiveTab, activeLeagueNam
             <div className="relative">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-black uppercase tracking-widest text-white">Prochain GP</span>
-                <span className={`shrink-0 flex items-center gap-1.5 text-xs font-bold ${myPrediction ? 'text-green-400' : raceStarted ? 'text-muted' : 'text-accent'}`}>
-                  <span className={`w-2 h-2 rounded-full ${myPrediction ? 'bg-green-500' : raceStarted ? 'bg-muted' : 'bg-accent animate-pulse'}`} />
-                  {myPrediction ? 'Pronostic soumis' : raceStarted ? 'Pas de prono' : 'Pas encore de prono'}
-                </span>
+                {sendEntry ? <SendChip level={sendLevel} /> : (
+                  <span className={`shrink-0 flex items-center gap-1.5 text-xs font-bold ${myPrediction ? 'text-green-400' : raceStarted ? 'text-muted' : 'text-accent'}`}>
+                    <span className={`w-2 h-2 rounded-full ${myPrediction ? 'bg-green-500' : raceStarted ? 'bg-muted' : 'bg-accent animate-pulse'}`} />
+                    {myPrediction ? 'Pronostic soumis' : raceStarted ? 'Pas de prono' : 'Pas encore de prono'}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 mt-5 mb-6">
                 <span className="text-4xl leading-none">{nextRace.flag}</span>

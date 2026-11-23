@@ -1,5 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { doc, getDocFromServer } from 'firebase/firestore'
+import { db } from './firebase'
 import { useAuth } from './hooks/useAuth'
+import { usePendingEntries } from './hooks/usePendingPredictions'
+import { reconcileUnverified, dismissEntries, requestOpenSheet } from './utils/pendingPredictions'
+import PendingStrip from './components/PendingStrip'
 import { useCollection, useDocument } from './hooks/useFirestore'
 import BottomNav from './components/BottomNav'
 import { ToastContainer } from './components/Toast'
@@ -20,6 +25,14 @@ import Intro from './screens/Intro'
 import PremiereLigue from './screens/PremiereLigue'
 
 let _toastId = 0
+
+// Ce que le serveur a vraiment enregistré pour un pronostic (null s'il n'y en a pas) : sert à vérifier, à la
+// réouverture, un envoi qui était en cours quand l'application s'est fermée. Lève une erreur si le serveur est
+// injoignable (le registre réessaiera au retour de la connexion).
+async function fetchServerPrediction(playerId, raceId) {
+  const snap = await getDocFromServer(doc(db, 'predictions', `${playerId}_${raceId}`))
+  return snap.exists() ? (snap.data().prediction ?? null) : null
+}
 const ACTIVE_LEAGUE_STORAGE_KEY = 'prono_f1_active_league_id'
 // Onglets qui, sans aucune ligue, affichent l'écran « sans ligue » à leur place.
 const LEAGUE_DEPENDENT_TABS = ['accueil', 'courses', 'classement', 'stats', 'leagues']
@@ -32,6 +45,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('accueil')
   const [selectedLeagueId, setSelectedLeagueId] = useState(null)
   const [toasts, setToasts] = useState([])
+  // Envois de pronostics pas encore confirmés par le serveur (bandeau global au-dessus de la barre du bas) et
+  // hauteur qu'il occupe, pour que le bas des écrans reste visible.
+  const pendingEntries = usePendingEntries()
+  const [stripHeight, setStripHeight] = useState(0)
   // Dernier écran visité avant Mon profil : c'est là que mène « Retour » (le profil s'ouvre depuis la
   // pastille du joueur de presque tous les écrans).
   const tabBeforeProfilRef = useRef('accueil')
@@ -126,6 +143,16 @@ export default function App() {
     if (activeTab !== 'monprofil' && activeTab !== 'reglages-du-jeu') tabBeforeProfilRef.current = activeTab
     if (activeTab !== 'reglages-du-jeu') tabBeforeReglesRef.current = activeTab
   }, [activeTab])
+
+  // À la connexion, et à chaque retour du réseau : vérifie auprès du serveur les envois restés en suspens d'une
+  // ouverture précédente (le bandeau n'annonce « pas enregistré » qu'après avoir vérifié).
+  useEffect(() => {
+    if (!user?.uid) return undefined
+    const run = () => { reconcileUnverified({ uid: user.uid, fetchPrediction: fetchServerPrediction }) }
+    run()
+    window.addEventListener('online', run)
+    return () => window.removeEventListener('online', run)
+  }, [user?.uid])
 
   // Un changement de compte connecté annule toute intro encore demandée.
   useEffect(() => {
@@ -341,9 +368,21 @@ export default function App() {
     <div className="bg-bg">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      <main className="safe-top" id="app-main" style={{ paddingBottom: '100px' }}>
+      <main className="safe-top" id="app-main" style={{ paddingBottom: `${100 + stripHeight}px` }}>
         {renderScreen()}
       </main>
+
+      <PendingStrip
+        entries={pendingEntries}
+        leagues={leagueOptions}
+        onDismiss={dismissEntries}
+        onHeight={setStripHeight}
+        onRedo={(entry) => {
+          activateLeague(entry.leagueId)
+          setActiveTab('accueil')
+          requestOpenSheet(entry.leagueId, entry.raceId)
+        }}
+      />
 
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} hasLeague={hasAnyLeague} />
     </div>
