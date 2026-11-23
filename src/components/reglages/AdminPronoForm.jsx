@@ -10,7 +10,6 @@ import { formatAdminWhen } from '../AdminEntry'
 
 const POSITIONS = ['P1', 'P2', 'P3']
 const MIN_MOTIF = 5
-const MOTIFS = ['Envoi perdu : application fermée avant la confirmation', 'Problème technique constaté', 'Erreur de saisie corrigée à sa demande']
 
 function MiniPodium({ picks, drivers, dim }) {
   return (
@@ -139,11 +138,6 @@ export default function AdminPronoForm({
         </label>
         <textarea id="admin-motif" value={motif} onChange={e => setMotif(e.target.value)} rows={2} maxLength={200} disabled={busy}
           placeholder="Explique pourquoi tu interviens" className="w-full rounded-lg bg-surfaceHigh border border-border px-3 py-2 text-sm placeholder:text-muted outline-none focus:border-white/30" />
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {MOTIFS.map(m => (
-            <button key={m} type="button" onClick={() => setMotif(m)} disabled={busy} className="text-[11px] font-bold rounded-full border border-border px-2.5 text-white/80" style={{ minHeight: 32 }}>{m}</button>
-          ))}
-        </div>
       </div>
 
       <div>
