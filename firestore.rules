@@ -59,6 +59,44 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/adminLog/$(data.adminEntry.logId)).data.at == request.time;
     }
 
+    // ── Pénalités posées ou retirées par un admin : même principe, journal obligatoire dans le même lot ──
+    // Ajout : le journal `add_<id de la pénalité>` (kind penalty-add), OU le journal d'une saisie ou correction de
+    // pronostic (adminLogId : la pénalité choisie dans le formulaire de l'admin) ; dans les deux cas il vise le
+    // même joueur, le même GP et la même ligue, est écrit par cet admin et dans CE lot (at == request.time).
+    // Retrait : le journal `rm_<id de la pénalité>` (kind penalty-remove) dans le même lot.
+    function penaltyAddLogged(penId, pen) {
+      return (
+        existsAfter(/databases/$(database)/documents/adminLog/$('add_' + penId))
+        && getAfter(/databases/$(database)/documents/adminLog/$('add_' + penId)).data.kind == 'penalty-add'
+        && getAfter(/databases/$(database)/documents/adminLog/$('add_' + penId)).data.penaltyId == penId
+        && getAfter(/databases/$(database)/documents/adminLog/$('add_' + penId)).data.playerId == pen.playerId
+        && getAfter(/databases/$(database)/documents/adminLog/$('add_' + penId)).data.raceId == pen.raceId
+        && getAfter(/databases/$(database)/documents/adminLog/$('add_' + penId)).data.leagueId == pen.leagueId
+        && getAfter(/databases/$(database)/documents/adminLog/$('add_' + penId)).data.byUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/adminLog/$('add_' + penId)).data.at == request.time
+      ) || (
+        pen.adminLogId is string
+        && existsAfter(/databases/$(database)/documents/adminLog/$(pen.adminLogId))
+        && getAfter(/databases/$(database)/documents/adminLog/$(pen.adminLogId)).data.kind in ['prediction-create', 'prediction-edit']
+        && getAfter(/databases/$(database)/documents/adminLog/$(pen.adminLogId)).data.playerId == pen.playerId
+        && getAfter(/databases/$(database)/documents/adminLog/$(pen.adminLogId)).data.raceId == pen.raceId
+        && getAfter(/databases/$(database)/documents/adminLog/$(pen.adminLogId)).data.leagueId == pen.leagueId
+        && getAfter(/databases/$(database)/documents/adminLog/$(pen.adminLogId)).data.byUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/adminLog/$(pen.adminLogId)).data.at == request.time
+      );
+    }
+
+    function penaltyRemovalLogged(penId, pen) {
+      return existsAfter(/databases/$(database)/documents/adminLog/$('rm_' + penId))
+        && getAfter(/databases/$(database)/documents/adminLog/$('rm_' + penId)).data.kind == 'penalty-remove'
+        && getAfter(/databases/$(database)/documents/adminLog/$('rm_' + penId)).data.penaltyId == penId
+        && getAfter(/databases/$(database)/documents/adminLog/$('rm_' + penId)).data.playerId == pen.playerId
+        && getAfter(/databases/$(database)/documents/adminLog/$('rm_' + penId)).data.raceId == pen.raceId
+        && getAfter(/databases/$(database)/documents/adminLog/$('rm_' + penId)).data.leagueId == pen.leagueId
+        && getAfter(/databases/$(database)/documents/adminLog/$('rm_' + penId)).data.byUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/adminLog/$('rm_' + penId)).data.at == request.time;
+    }
+
     // ── leagues ──────────────────────────────────────────────────────────
     match /leagues/{leagueId} {
       allow read: if isSignedIn();
@@ -181,13 +219,17 @@ service cloud.firestore {
     match /penalties/{penId} {
       allow read: if isSignedIn();
 
-      // Seuls les admins (de la ligue, ou super-admin) créent des pénalités
-      // à la main. Les pénalités automatiques sont écrites par les Cloud
-      // Functions (SDK admin, qui contourne les règles).
-      allow create: if isSuperAdmin()
-        || isLeagueAdmin(request.resource.data.leagueId);
+      // Seuls les admins (de la ligue, ou super-admin) créent des pénalités à la main, et seulement avec leur
+      // entrée dans le journal `adminLog` (même lot : motif, qui, quand). Les pénalités automatiques sont
+      // écrites par les Cloud Functions (SDK admin, qui contourne les règles).
+      allow create: if (isSuperAdmin() || isLeagueAdmin(request.resource.data.leagueId))
+        && penaltyAddLogged(penId, request.resource.data);
 
-      allow update, delete: if isSuperAdmin() || isLeagueAdmin(resource.data.leagueId);
+      // Une pénalité ne se modifie jamais (on la retire, puis on en ajoute une autre si besoin). Son retrait par
+      // un admin passe lui aussi par le journal. La suppression d'une ligue ne supprime plus les pénalités.
+      allow update: if false;
+      allow delete: if (isSuperAdmin() || isLeagueAdmin(resource.data.leagueId))
+        && penaltyRemovalLogged(penId, resource.data);
     }
 
     // ── adminLog : journal des interventions des admins (ajout seul) ───────────────
@@ -200,14 +242,26 @@ service cloud.firestore {
       allow create: if (isSuperAdmin() || isLeagueAdmin(request.resource.data.leagueId))
         && request.resource.data.byUid == request.auth.uid
         && request.resource.data.at == request.time
-        && request.resource.data.kind in ['prediction-create', 'prediction-edit']
         && request.resource.data.motif is string
         && request.resource.data.motif.trim().size() >= 5
         && request.resource.data.motif.size() <= 200
-        && request.resource.data.predictionId is string
         && request.resource.data.playerId is string
         && request.resource.data.raceId is number
-        && request.resource.data.after is map;
+        && (
+          (
+            request.resource.data.kind in ['prediction-create', 'prediction-edit']
+            && request.resource.data.predictionId is string
+            && request.resource.data.after is map
+          ) || (
+            // Pénalité ajoutée ou retirée : l'identifiant du journal est déterministe (add_ ou rm_ + id de la
+            // pénalité), ce qui lie un journal à UNE seule pénalité.
+            request.resource.data.kind in ['penalty-add', 'penalty-remove']
+            && request.resource.data.penaltyId is string
+            && request.resource.data.penaltyType in ['late', 'change']
+            && request.resource.data.penaltyAmount is number
+            && logId == (request.resource.data.kind == 'penalty-add' ? 'add_' : 'rm_') + request.resource.data.penaltyId
+          )
+        );
 
       allow update, delete: if false;
     }

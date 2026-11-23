@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { doc, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { useAuth } from '../hooks/useAuth'
 import { db } from '../firebase'
-import { useCollection, useDocument, where, upsertDoc, deleteDocument } from '../hooks/useFirestore'
+import { useCollection, useDocument, where, upsertDoc } from '../hooks/useFirestore'
 import DeleteLeagueSheet from '../components/DeleteLeagueSheet'
-import { saveAdminIntervention } from '../utils/adminInterventions'
+import { saveAdminIntervention, saveAdminPenalty, removeAdminPenalty } from '../utils/adminInterventions'
 import Skeleton from '../components/Skeleton'
 import ReglagesHub from '../components/reglages/ReglagesHub'
 import ReglagesJoueurs from '../components/reglages/ReglagesJoueurs'
@@ -58,26 +58,20 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
   // ── Pénalités à la main : ajout et retrait (depuis la fiche d'un joueur, dans Suivi des GP) ──
   // Le déverrouillage exceptionnel d'un pronostic (cadenas) n'existe plus dans l'interface (décision du
   // 9 nov. 2026). Les deux fonctions renvoient { ok, error } : la fiche affiche l'erreur et reste ouverte.
+  // Ajout et retrait passent par le journal des interventions (adminLog) : motif OBLIGATOIRE, qui, quand, écrits
+  // dans le même lot que la pénalité. Les règles Firestore refusent tout ajout ou retrait sans cette entrée.
+  const adminIdentity = () => ({ uid: user.uid, name: String(profiles.find(p => p._id === user?.uid)?.displayName ?? 'Admin') })
+
   const addPenalty = async ({ player, race, type, motif }) => {
     // Défense en profondeur : les règles Firestore refusent déjà tout non-admin ; on échoue vite côté interface.
     if (!isLeagueAdmin) return { ok: false, error: 'Réservé aux administrateurs de la ligue.' }
-    const id = `pen_${type}_${player.id}_${race.id}_${Date.now()}`
     // On fige le montant des règles du moment : la pénalité garde ses points même si la règle change ensuite.
     const rule = type === 'late' ? league?.rules?.postQualifsPenalty : league?.rules?.modificationPenalty
     const fallback = type === 'late' ? 10 : 5
     const amount = typeof rule?.amount === 'number' && rule.amount > 0 ? rule.amount : fallback
-    try {
-      await upsertDoc('penalties', id, {
-        playerId: player.id, raceId: race.id, type, leagueId, amount,
-        createdAt: new Date(),
-        addedBy: user?.uid ?? null,
-        ...(motif ? { motif } : {}),
-      })
-      addToast?.('Pénalité ajoutée', 'warning')
-      return { ok: true }
-    } catch {
-      return { ok: false, error: "Erreur lors de l'ajout de la pénalité. Réessaie." }
-    }
+    const res = await saveAdminPenalty({ leagueId, race, player: { id: player.id, name: player.name }, type, amount, motif, admin: adminIdentity() })
+    if (res.ok) addToast?.('Pénalité ajoutée et publiée à la ligue', 'warning')
+    return res
   }
 
   // ── Saisie ou correction du pronostic d'un joueur par un admin (voir utils/adminInterventions.js) ──
@@ -95,15 +89,11 @@ export default function ReglagesLigue({ leagueId, activeLeagueId, onClearActiveL
     return res
   }
 
-  const removePenalty = async (pen) => {
+  const removePenalty = async ({ pen, player, motif }) => {
     if (!isLeagueAdmin) return { ok: false, error: 'Réservé aux administrateurs de la ligue.' }
-    try {
-      await deleteDocument('penalties', pen._id)
-      addToast?.('Pénalité retirée', 'info')
-      return { ok: true }
-    } catch {
-      return { ok: false, error: 'Erreur lors du retrait de la pénalité. Réessaie.' }
-    }
+    const res = await removeAdminPenalty({ leagueId, pen, player: { id: player.id, name: player.name }, motif, admin: adminIdentity() })
+    if (res.ok) addToast?.('Pénalité retirée et publiée à la ligue', 'info')
+    return res
   }
 
   // ── Retirer / bannir / réintégrer ────────────────────────────────────────

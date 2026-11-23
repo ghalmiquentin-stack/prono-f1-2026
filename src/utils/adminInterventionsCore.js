@@ -94,6 +94,42 @@ export function buildAdminIntervention({
   return { predictionId, prediction, log, penaltyDoc }
 }
 
+// Pénalité posée à la main par un admin : la pénalité ET son entrée de journal, dans le même lot. L'identifiant
+// du journal est déterministe (`add_` + id de la pénalité) : les règles Firestore lient ainsi un journal à UNE
+// seule pénalité.
+export function buildPenaltyAddition({ leagueId, race, player, type, amount, motif, admin, stamp, now = Date.now() }) {
+  const penaltyId = `pen_${type}_${player.id}_${race.id}_${now}`
+  const logId = `add_${penaltyId}`
+  return {
+    penaltyId, logId,
+    penalty: {
+      playerId: player.id, raceId: race.id, type, leagueId, amount,
+      createdAt: stamp(), addedBy: admin.uid, motif, adminLogId: logId,
+    },
+    log: {
+      leagueId, kind: 'penalty-add', raceId: race.id, playerId: player.id, playerName: player.name,
+      byUid: admin.uid, byName: admin.name, at: stamp(), motif,
+      penaltyId, penaltyType: type, penaltyAmount: amount,
+    },
+  }
+}
+
+// Retrait d'une pénalité par un admin (automatique ou posée à la main) : suppression de la pénalité ET entrée de
+// journal (`rm_` + id de la pénalité) dans le même lot. Le montant et le type sont recopiés dans le journal : la
+// pénalité supprimée n'existe plus, le journal est la seule trace.
+export function buildPenaltyRemoval({ leagueId, pen, player, motif, admin, stamp }) {
+  const penaltyId = pen._id ?? pen.id
+  const amount = typeof pen.amount === 'number' ? pen.amount : (pen.type === 'late' ? 10 : 5)
+  return {
+    penaltyId, logId: `rm_${penaltyId}`,
+    log: {
+      leagueId: pen.leagueId ?? leagueId, kind: 'penalty-remove', raceId: pen.raceId, playerId: pen.playerId,
+      playerName: player.name, byUid: admin.uid, byName: admin.name, at: stamp(), motif,
+      penaltyId, penaltyType: pen.type, penaltyAmount: amount, penaltySource: pen.source === 'auto' ? 'auto' : 'admin',
+    },
+  }
+}
+
 // Effet de l'intervention sur le classement de la ligue (GP terminé seulement) : total et rang du joueur avant et
 // après. Même calcul que la page Classement (calculateAllSeasonScores), sur une copie des données : rien n'est écrit.
 export function projectImpact({ players, races, predictions, penalties, playerId, race, picks, penalty }) {

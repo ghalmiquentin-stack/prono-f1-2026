@@ -23,8 +23,15 @@ export function journalTitle(entry) {
   }
 }
 
-// Ligne « pénalité » d'une intervention sur un prono (null si la ligue n'avait rien à appliquer).
+// Ligne « pénalité » d'une entrée du journal (null si la ligue n'avait rien à appliquer).
 export function journalPenaltyLine(entry) {
+  if (entry.kind === 'penalty-add' || entry.kind === 'penalty-remove') {
+    const which = entry.penaltyType === 'change' ? 'de modification' : 'de retard'
+    const auto = entry.kind === 'penalty-remove' && entry.penaltySource === 'auto' ? ' automatique' : ''
+    return entry.kind === 'penalty-add'
+      ? `Pénalité ${which} ajoutée : −${entry.penaltyAmount} pts`
+      : `Pénalité${auto} ${which} retirée : ${entry.penaltyAmount} pts rendus`
+  }
   const type = entry.penaltyType === 'change' || entry.kind === 'prediction-edit' ? 'de modification' : 'de retard'
   if (entry.penaltyChoice === 'applied') return `Pénalité ${type} appliquée : −${entry.penaltyAmount} pts`
   if (entry.penaltyChoice === 'waived') return `Pénalité ${type} non appliquée`

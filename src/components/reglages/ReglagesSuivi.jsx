@@ -319,7 +319,7 @@ export default function ReglagesSuivi({
             onConfirm={async (motif) => {
               const res = confirm.kind === 'add'
                 ? await onAddPenalty({ player: openPlayer, race, type: confirm.type, motif })
-                : await onRemovePenalty(confirm.pen)
+                : await onRemovePenalty({ pen: confirm.pen, player: openPlayer, motif })
               if (res?.ok) setConfirm(null)
               return res
             }}

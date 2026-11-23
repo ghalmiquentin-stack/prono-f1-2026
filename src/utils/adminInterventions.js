@@ -4,7 +4,7 @@
 
 import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
-import { buildAdminIntervention } from './adminInterventionsCore'
+import { buildAdminIntervention, buildPenaltyAddition, buildPenaltyRemoval } from './adminInterventionsCore'
 
 export { adminEntryOf, penaltyOptionFor, projectImpact, podiumOf, samePodium } from './adminInterventionsCore'
 
@@ -25,3 +25,33 @@ export async function saveAdminIntervention(params) {
   }
 }
 
+
+// Ajout d'une pénalité à la main : pénalité + entrée de journal (motif obligatoire), un seul lot. { ok, error }
+export async function saveAdminPenalty(params) {
+  try {
+    const built = buildPenaltyAddition({ ...params, stamp: serverTimestamp })
+    const batch = writeBatch(db)
+    batch.set(doc(db, 'penalties', built.penaltyId), built.penalty)
+    batch.set(doc(db, 'adminLog', built.logId), built.log)
+    await batch.commit()
+    return { ok: true }
+  } catch (err) {
+    console.error(err)
+    return { ok: false, error: "Erreur lors de l'ajout de la pénalité. Rien n'a été modifié, réessaie." }
+  }
+}
+
+// Retrait d'une pénalité : suppression + entrée de journal (motif obligatoire), un seul lot. { ok, error }
+export async function removeAdminPenalty(params) {
+  try {
+    const built = buildPenaltyRemoval({ ...params, stamp: serverTimestamp })
+    const batch = writeBatch(db)
+    batch.delete(doc(db, 'penalties', built.penaltyId))
+    batch.set(doc(db, 'adminLog', built.logId), built.log)
+    await batch.commit()
+    return { ok: true }
+  } catch (err) {
+    console.error(err)
+    return { ok: false, error: 'Erreur lors du retrait de la pénalité. Rien n\'a été modifié, réessaie.' }
+  }
+}

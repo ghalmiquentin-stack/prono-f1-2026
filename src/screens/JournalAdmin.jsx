@@ -74,7 +74,7 @@ export function JournalView({ entries, races, drivers, league, loading = false, 
           const race = races.find(r => r.id === e.raceId)
           const hidden = hideBeforeStart && race && !hasRaceStarted(race)
           const isPrediction = KIND_GROUP[e.kind] === 'pronos'
-          const penaltyLine = isPrediction ? journalPenaltyLine(e) : (e.penaltyAmount != null ? `Pénalité ${e.penaltyType === 'change' ? 'de modification' : 'de retard'} : −${e.penaltyAmount} pts` : null)
+          const penaltyLine = journalPenaltyLine(e)
           const podium = isPrediction
             ? (hidden ? 'Podium masqué jusqu\'au départ'
               : e.kind === 'prediction-edit'

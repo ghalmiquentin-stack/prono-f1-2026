@@ -104,8 +104,11 @@ export function ConfirmPenalty({ kind, player, race, type, pen, amount, whenText
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const add = kind === 'add'
+  // Motif OBLIGATOIRE (ajout comme retrait) : il est publié dans le journal des interventions de la ligue.
+  const motifOk = motif.trim().length >= 5
 
   const go = async () => {
+    if (!motifOk) return
     setBusy(true)
     setError('')
     const res = await onConfirm(motif.trim())
@@ -133,30 +136,29 @@ export function ConfirmPenalty({ kind, player, race, type, pen, amount, whenText
         </p>
       )}
 
-      {add && (
-        <div>
-          <label className="text-xs font-bold text-muted block mb-1.5">Motif (facultatif)</label>
-          <input
-            value={motif}
-            onChange={e => setMotif(e.target.value)}
-            maxLength={120}
-            className="input-field"
-            placeholder="Ex. : envoi hors délai constaté"
-            disabled={busy}
-          />
-          <p className="text-[11px] text-muted mt-1.5">Gardé avec la pénalité, visible dans la fiche du joueur.</p>
-        </div>
-      )}
+      <div>
+        <label htmlFor="penalty-motif" className="text-xs font-bold text-muted block mb-1.5">Motif <span className="text-accent">*</span></label>
+        <input
+          id="penalty-motif"
+          value={motif}
+          onChange={e => setMotif(e.target.value)}
+          maxLength={200}
+          className="input-field"
+          placeholder="Explique pourquoi tu interviens"
+          disabled={busy}
+        />
+        <p className="text-[11px] text-muted mt-1.5">Publié dans le journal des interventions : toute la ligue le voit.</p>
+      </div>
 
       {error && <p className="text-accent text-xs font-bold">{error}</p>}
 
       <button
         onClick={go}
-        disabled={busy}
+        disabled={busy || !motifOk}
         className={`w-full rounded-xl text-white font-black text-base active:scale-95 disabled:opacity-60 ${add ? 'bg-accent shadow-glow-red' : 'bg-red-700'}`}
         style={{ minHeight: 48 }}
       >
-        {busy ? (add ? 'Ajout…' : 'Retrait…') : (add ? 'Ajouter la pénalité' : 'Retirer la pénalité')}
+        {busy ? (add ? 'Ajout…' : 'Retrait…') : !motifOk ? 'Le motif est obligatoire' : (add ? 'Ajouter la pénalité' : 'Retirer la pénalité')}
       </button>
       <button onClick={onCancel} disabled={busy} className="w-full rounded-xl text-sm font-bold text-muted active:bg-surfaceHigh disabled:opacity-50" style={{ minHeight: 44 }}>Annuler</button>
     </div>
