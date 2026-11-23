@@ -48,7 +48,14 @@ export function Toast({ message, type = 'info', onClose, duration = 3000 }) {
 
 export function ToastContainer({ toasts, removeToast }) {
   return (
-    <div className="fixed top-4 left-4 right-4 z-50 space-y-2 pointer-events-none">
+    // Sous la zone de l'heure et de l'îlot : env(safe-area-inset-top) vaut 0 sur un navigateur ou un téléphone sans
+    // encoche (Android compris), donc la position reste à 16 px comme avant ; elle descend seulement quand
+    // l'application s'affiche sous la barre d'état (iPhone installé sur l'écran d'accueil, découpes Android).
+    // Si le navigateur ne comprend pas cette valeur, il l'ignore et garde top-4.
+    <div
+      className="fixed top-4 left-4 right-4 z-50 space-y-2 pointer-events-none"
+      style={{ top: 'max(1rem, calc(env(safe-area-inset-top, 0px) + 12px))' }}
+    >
       {toasts.map(t => (
         <div key={t.id} className="pointer-events-auto">
           <Toast
